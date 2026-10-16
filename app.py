@@ -19,9 +19,8 @@ def check_write_query_answer(user_input, expected_answer):
     return normalize_sql(user_input) == normalize_sql(expected_answer)
 
 
-def check_find_bug_answer(user_input, keywords):
-    answer = user_input.lower()
-    return any(keyword in answer for keyword in keywords)
+def check_find_bug_answer(user_input, expected_answer):
+    return check_write_query_answer(user_input, expected_answer)
 
 
 def check_explain_result_answer(user_input, keywords):
@@ -35,7 +34,7 @@ def check_answer(user_input, task):
         return check_write_query_answer(user_input, task["expected_answer"])
 
     if task["type"] == "find-bug":
-        return check_find_bug_answer(user_input, task["keywords"])
+        return check_find_bug_answer(user_input, task["expected_answer"])
 
     if task["type"] == "explain-result":
         return check_explain_result_answer(user_input, task["keywords"])
