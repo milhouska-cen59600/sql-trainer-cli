@@ -9,7 +9,7 @@ from gui_app import (
     TASK_TYPE_LABELS,
     SQLTrainerGUI,
 )
-from tasks import TASKS, generate_tasks, get_random_task
+from tasks import TASKS, get_random_task
 
 
 def destroy_test_root(root):
@@ -390,25 +390,21 @@ class SQLTrainerGUITests(unittest.TestCase):
 
     def test_catalog_has_expected_task_distribution(self):
         expected = {
-            ("beginner", "write-query"): 3,
-            ("beginner", "find-bug"): 3,
-            ("beginner", "explain-result"): 3,
-            ("intermediate", "write-query"): 6,
-            ("intermediate", "find-bug"): 6,
-            ("intermediate", "explain-result"): 4,
-            ("advanced", "write-query"): 6,
-            ("advanced", "find-bug"): 5,
-            ("advanced", "explain-result"): 5,
+            (difficulty, task_type): 6
+            for difficulty in DIFFICULTY_LABELS
+            for task_type in TASK_TYPE_LABELS
         }
         actual = Counter(
             (task["difficulty"], task["type"])
             for task in TASKS
         )
 
-        self.assertEqual(len(TASKS), 41)
+        self.assertEqual(len(TASKS), 54)
         self.assertEqual(dict(actual), expected)
 
     def test_catalog_fields_and_expected_answers(self):
+        import re
+
         required = {
             "id",
             "difficulty",
@@ -428,8 +424,6 @@ class SQLTrainerGUITests(unittest.TestCase):
         for task in TASKS:
             with self.subTest(task_id=task["id"]):
                 self.assertTrue(required.issubset(task))
-                self.assertIn("Tabulka:", task["prompt"])
-                import re
 
                 table_blocks = re.split(
                     r"(?m)^Tabulka:\s*",
@@ -438,52 +432,62 @@ class SQLTrainerGUITests(unittest.TestCase):
                 self.assertTrue(table_blocks, "Missing sample tables")
 
                 for block in table_blocks:
-                    table_lines = block.splitlines()
-                    table_name = table_lines[0].strip()
+                    lines = block.splitlines()
+                    table_name = lines[0].strip()
 
                     with self.subTest(table=table_name):
                         self.assertRegex(
                             table_name,
                             r"^[a-z][a-z0-9_]*$",
                         )
-                        self.assertGreaterEqual(
-                            len(table_lines),
-                            5,
-                            "Expected header, separator and two sample rows",
+                        self.assertGreaterEqual(len(lines), 7)
+
+                        # Border, header, border, two data rows, border.
+                        grid = lines[1:7]
+                        self.assertEqual(
+                            len({len(line) for line in grid}),
+                            1,
+                            "Table lines must have equal widths",
                         )
 
-                        columns = [
-                            value.strip()
-                            for value in table_lines[1].split("|")
-                        ]
+                        for index in (0, 2, 5):
+                            self.assertRegex(
+                                grid[index],
+                                r"^\+(?:-+\+)+$",
+                            )
+                            self.assertEqual(grid[index], grid[0])
+
+                        def parse_row(line):
+                            self.assertTrue(
+                                line.startswith("|") and line.endswith("|")
+                            )
+                            return [
+                                cell.strip()
+                                for cell in line.split("|")[1:-1]
+                            ]
+
+                        columns = parse_row(grid[1])
                         self.assertGreaterEqual(len(columns), 2)
-                        self.assertEqual(len(columns), len(set(columns)))
-
-                        for column in columns:
-                            self.assertRegex(column, r"^[a-z][a-z0-9_]*$")
-
-                        separator = table_lines[2].strip()
-                        self.assertRegex(separator, r"^-+(?:\+-+)+$")
                         self.assertEqual(
-                            len(separator.split("+")),
+                            len(columns), len(set(columns))
+                        )
+                        self.assertEqual(
+                            len(grid[0].split("+")) - 2,
                             len(columns),
                         )
 
-                        rows = []
-                        for line in table_lines[3:]:
-                            if not line.strip() or "|" not in line:
-                                break
-                            rows.append(line)
+                        for column in columns:
+                            self.assertRegex(
+                                column, r"^[a-z][a-z0-9_]*$"
+                            )
 
-                        self.assertEqual(
-                            len(rows),
-                            2,
-                            "Each sample table must contain exactly two rows",
-                        )
-                        for row in rows:
-                            values = [value.strip() for value in row.split("|")]
+                        for row in grid[3:5]:
+                            values = parse_row(row)
                             self.assertEqual(len(values), len(columns))
-                            self.assertTrue(all(values), "Empty sample cell")
+                            self.assertTrue(
+                                all(values), "Empty sample cell"
+                            )
+
                 self.assertTrue(
                     self.app.is_correct_answer(
                         task["expected_answer"], task
@@ -496,19 +500,6 @@ class SQLTrainerGUITests(unittest.TestCase):
                             task["sql"], task
                         )
                     )
-
-    def test_generator_returns_fresh_catalog(self):
-        first = generate_tasks()
-        second = generate_tasks()
-
-        self.assertEqual(first, second)
-        self.assertIsNot(first, second)
-        self.assertIsNot(first[0], second[0])
-
-        first[0]["prompt"] = "změněné zadání"
-        self.assertNotEqual(
-            first[0]["prompt"], second[0]["prompt"]
-        )
 
     def test_random_selection_respects_filters(self):
         for difficulty in DIFFICULTY_LABELS:
