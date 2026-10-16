@@ -12,11 +12,26 @@ from gui_app import (
 from tasks import TASKS, generate_tasks, get_random_task
 
 
+def destroy_test_root(root):
+    """Destroy widgets and cancel pending Tcl timers before closing Tk."""
+    try:
+        for child in list(root.winfo_children()):
+            child.destroy()
+    finally:
+        # CustomTkinter schedules scrollbar and DPI checks with after().
+        # Cancel remaining callbacks while their Tcl interpreter exists.
+        for callback_id in root.tk.splitlist(
+            root.tk.call("after", "info")
+        ):
+            root.after_cancel(callback_id)
+        root.destroy()
+
+
 class SQLTrainerGUITests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        self.addCleanup(destroy_test_root, self.root)
         self.app = SQLTrainerGUI(self.root)
 
     def select_task(self, difficulty="beginner", task_type="write-query"):
@@ -34,7 +49,7 @@ class SQLTrainerGUITests(unittest.TestCase):
 
     def test_all_levels_offer_three_task_types(self):
         self.assertEqual(
-            self.app.difficulty_box["values"],
+            tuple(self.app.difficulty_box.cget("values")),
             ("Junior", "Medior", "Senior"),
         )
         expected_types = set(TASK_TYPE_LABELS.values())
@@ -45,7 +60,7 @@ class SQLTrainerGUITests(unittest.TestCase):
                     DIFFICULTY_LABELS[difficulty]
                 )
                 self.assertEqual(
-                    set(self.app.type_box["values"]),
+                    set(tuple(self.app.type_box.cget("values"))),
                     expected_types,
                 )
 
@@ -109,7 +124,7 @@ class SQLTrainerGUITests(unittest.TestCase):
                 app.start_button,
                 app.next_button,
             ):
-                self.assertTrue(widget.instate(["disabled"]))
+                self.assertEqual(widget.cget("state"), "disabled")
 
             self.assertEqual(
                 app.feedback_text.get("1.0", "end-1c"),
@@ -235,18 +250,23 @@ class SQLTrainerGUITests(unittest.TestCase):
         )
 
     def test_find_bug_prefills_editor(self):
+        from gui_app import format_sql
+
         for difficulty in DIFFICULTY_LABELS:
             with self.subTest(difficulty=difficulty):
                 self.select_task(difficulty, "find-bug")
                 task = self.app.current_task
+                actual = self.app.answer_text.get("1.0", "end-1c")
 
+                self.assertEqual(actual, format_sql(task["sql"]))
                 self.assertEqual(
-                    self.app.answer_text.get("1.0", "end-1c"),
-                    task["sql"],
+                    self.app.normalize_sql(actual),
+                    self.app.normalize_sql(task["sql"]),
                 )
                 self.assertFalse(
-                    self.app.is_correct_answer(task["sql"], task)
+                    self.app.is_correct_answer(actual, task)
                 )
+
 
     def test_corrected_sql_awards_score(self):
         self.select_task("advanced", "find-bug")
@@ -368,18 +388,25 @@ class SQLTrainerGUITests(unittest.TestCase):
         )
         self.assertFalse(self.app.answered_current_task)
 
-    def test_catalog_has_three_tasks_per_combination(self):
-        counts = Counter(
+    def test_catalog_has_expected_task_distribution(self):
+        expected = {
+            ("beginner", "write-query"): 3,
+            ("beginner", "find-bug"): 3,
+            ("beginner", "explain-result"): 3,
+            ("intermediate", "write-query"): 6,
+            ("intermediate", "find-bug"): 6,
+            ("intermediate", "explain-result"): 4,
+            ("advanced", "write-query"): 6,
+            ("advanced", "find-bug"): 5,
+            ("advanced", "explain-result"): 5,
+        }
+        actual = Counter(
             (task["difficulty"], task["type"])
             for task in TASKS
         )
-        self.assertEqual(len(TASKS), 27)
 
-        for difficulty in DIFFICULTY_LABELS:
-            for task_type in TASK_TYPE_LABELS:
-                self.assertEqual(
-                    counts[(difficulty, task_type)], 3
-                )
+        self.assertEqual(len(TASKS), 41)
+        self.assertEqual(dict(actual), expected)
 
     def test_catalog_fields_and_expected_answers(self):
         required = {
@@ -402,7 +429,61 @@ class SQLTrainerGUITests(unittest.TestCase):
             with self.subTest(task_id=task["id"]):
                 self.assertTrue(required.issubset(task))
                 self.assertIn("Tabulka:", task["prompt"])
-                self.assertIn("Sloupce:", task["prompt"])
+                import re
+
+                table_blocks = re.split(
+                    r"(?m)^Tabulka:\s*",
+                    task["prompt"],
+                )[1:]
+                self.assertTrue(table_blocks, "Missing sample tables")
+
+                for block in table_blocks:
+                    table_lines = block.splitlines()
+                    table_name = table_lines[0].strip()
+
+                    with self.subTest(table=table_name):
+                        self.assertRegex(
+                            table_name,
+                            r"^[a-z][a-z0-9_]*$",
+                        )
+                        self.assertGreaterEqual(
+                            len(table_lines),
+                            5,
+                            "Expected header, separator and two sample rows",
+                        )
+
+                        columns = [
+                            value.strip()
+                            for value in table_lines[1].split("|")
+                        ]
+                        self.assertGreaterEqual(len(columns), 2)
+                        self.assertEqual(len(columns), len(set(columns)))
+
+                        for column in columns:
+                            self.assertRegex(column, r"^[a-z][a-z0-9_]*$")
+
+                        separator = table_lines[2].strip()
+                        self.assertRegex(separator, r"^-+(?:\+-+)+$")
+                        self.assertEqual(
+                            len(separator.split("+")),
+                            len(columns),
+                        )
+
+                        rows = []
+                        for line in table_lines[3:]:
+                            if not line.strip() or "|" not in line:
+                                break
+                            rows.append(line)
+
+                        self.assertEqual(
+                            len(rows),
+                            2,
+                            "Each sample table must contain exactly two rows",
+                        )
+                        for row in rows:
+                            values = [value.strip() for value in row.split("|")]
+                            self.assertEqual(len(values), len(columns))
+                            self.assertTrue(all(values), "Empty sample cell")
                 self.assertTrue(
                     self.app.is_correct_answer(
                         task["expected_answer"], task
@@ -441,6 +522,36 @@ class SQLTrainerGUITests(unittest.TestCase):
         self.assertIsNone(
             get_random_task("neexistující", "write-query")
         )
+
+
+
+
+class SQLFormattingTests(unittest.TestCase):
+    def test_sql_becomes_multiline(self):
+        from gui_app import format_sql
+
+        result = format_sql(
+            "SELECT id, castka FROM transakce WHERE castka > 50000;"
+        )
+        self.assertIn("\n", result)
+        self.assertIn("FROM transakce", result)
+        self.assertIn("WHERE castka > 50000", result)
+
+    def test_formatting_preserves_string_literal(self):
+        from gui_app import format_sql
+
+        result = format_sql(
+            "SELECT * FROM transakce WHERE poznamka = 'VS:  AbC';"
+        )
+        self.assertIn("'VS:  AbC'", result)
+
+    def test_formatting_does_not_fix_bug(self):
+        from gui_app import format_sql
+
+        result = format_sql(
+            "SELECT * FROM transakce WHERE castka < 50000;"
+        )
+        self.assertIn("castka < 50000", result)
 
 
 if __name__ == "__main__":
