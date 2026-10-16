@@ -148,6 +148,9 @@ class SQLTrainerGUI:
         self.feedback_text.config(state="disabled")
         self.feedback_text.yview_moveto(0)
 
+    def set_no_active_task_message(self):
+        self.set_feedback("No active task. Click Start first.", "red")
+
     def show_welcome(self):
         self.task_label.config(text="Welcome to SQL Trainer GUI. Choose difficulty and task type, then click Start.")
         self.sql_label.config(text="")
@@ -211,14 +214,14 @@ class SQLTrainerGUI:
 
     def show_hint(self):
         if not self.current_task:
-            self.set_feedback("No active task. Click Start first.", "red")
+            self.set_no_active_task_message()
             return
 
         self.set_feedback(f"Hint: {self.current_task['hint']}", "#8a4b00")
 
     def show_solution(self):
         if not self.current_task:
-            self.set_feedback("No active task. Click Start first.", "red")
+            self.set_no_active_task_message()
             return
 
         self.solution_shown = True
@@ -226,7 +229,7 @@ class SQLTrainerGUI:
 
     def check_answer(self):
         if not self.current_task:
-            self.set_feedback("No active task. Click Start first.", "red")
+            self.set_no_active_task_message()
             return
 
         if self.answered_current_task:
