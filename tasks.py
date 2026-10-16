@@ -1,1229 +1,546 @@
 import random
-from copy import deepcopy
+
+
+_TABLES = {
+    "customers": (
+        ("customer_id", "name", "city", "email"),
+        ((1, "Adam Novak", "Prague", "NULL"), (2, "Eva Mala", "Brno", "eva@example.test")),
+    ),
+    "accounts": (
+        ("account_id", "customer_id", "branch_id", "balance", "status"),
+        ((10, 1, 1, 1500, "ACTIVE"), (20, 2, 2, 500, "BLOCKED")),
+    ),
+    "transactions": (
+        ("transaction_id", "account_id", "amount", "booked_on", "kind"),
+        ((100, 10, 200, "2026-01-10", "CREDIT"), (101, 10, -50, "2026-01-10", "DEBIT")),
+    ),
+    "branches": (
+        ("branch_id", "name", "city"),
+        ((1, "Central", "Prague"), (2, "South", "Brno")),
+    ),
+    "loans": (
+        ("loan_id", "customer_id", "principal", "status"),
+        ((1000, 1, 10000, "APPROVED"), (1001, 2, 5000, "PENDING")),
+    ),
+}
+
+
+def _task(task_id, difficulty, task_type, tables, instruction, answer, hint,
+          sql=None, keywords=()):
+    sections = [
+        "Úkol: " + instruction,
+        "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu; booked_on má typ DATE.",
+    ]
+    for name in tables:
+        columns, rows = _TABLES[name]
+        cells = [columns] + [tuple(str(value) for value in row) for row in rows]
+        widths = [max(len(row[index]) for row in cells) for index in range(len(columns))]
+        border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+        lines = [
+            "| " + " | ".join(value.ljust(width) for value, width in zip(row, widths)) + " |"
+            for row in cells
+        ]
+        sections.append(
+            f"Tabulka: {name}\n{border}\n{lines[0]}\n{border}\n"
+            + "\n".join(lines[1:]) + f"\n{border}"
+        )
+    if task_type == "find-bug":
+        sections.append("Odpověz celým opraveným SQL dotazem, nikoli popisem chyby.")
+    if task_type in ("write-query", "find-bug"):
+        sections.append(
+            "Kontrola porovnává tokeny SQL bez ohledu na velikost písmen mimo textové "
+            "literály, mezery mezi tokeny a jeden koncový středník. Obsah textových "
+            "literálů musí odpovídat přesně. Dodrž pořadí sloupců a uvedené aliasy; "
+            "nepřidávej další aliasy ani řazení. Nápověda upřesňuje očekávaný zápis."
+        )
+    return {
+        "id": task_id,
+        "difficulty": difficulty,
+        "type": task_type,
+        "prompt": "\n\n".join(sections),
+        "sql": sql,
+        "hint": hint,
+        "solution": answer,
+        "expected_answer": answer,
+        "keywords": list(keywords),
+    }
 
 
 TASKS = [
-    # =========================================================
-    # JUNIOR
-    # =========================================================
-    {
-        "id": 1,
-        "difficulty": "beginner",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vypiš všechny klienty, jejichž monthly_income je vyšší než 20000.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name  | city   | monthly_income\n"
-            "----------+------------+------------+--------+---------------\n"
-            "101       | Jan        | Novak      | Praha  | 28000\n"
-            "102       | Petra      | Svobodova  | Brno   | 19000"
-        ),
-        "sql": None,
-        "hint": "Použij WHERE monthly_income > 20000.",
-        "solution": "SELECT * FROM clients WHERE monthly_income > 20000;",
-        "expected_answer": "SELECT * FROM clients WHERE monthly_income > 20000;",
-        "keywords": [],
-    },
-    {
-        "id": 2,
-        "difficulty": "beginner",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Získej account_number a balance pro všechny účty, kde je balance vyšší než 100000.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000"
-        ),
-        "sql": None,
-        "hint": "Vyber pouze account_number a balance.",
-        "solution": "SELECT account_number, balance FROM accounts WHERE balance > 100000;",
-        "expected_answer": "SELECT account_number, balance FROM accounts WHERE balance > 100000;",
-        "keywords": [],
-    },
-    {
-        "id": 3,
-        "difficulty": "beginner",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vypiš všechny transakce typu 'WITHDRAWAL'.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type | note\n"
-            "---------------+------------+------------------+--------+------------------+-----------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL       | ATM Praha\n"
-            "9002           | 5002       | 2024-01-12       | 8000   | DEPOSIT          | Cash desk"
-        ),
-        "sql": None,
-        "hint": "Použij WHERE transaction_type = 'WITHDRAWAL'.",
-        "solution": "SELECT * FROM transactions WHERE transaction_type = 'WITHDRAWAL';",
-        "expected_answer": "SELECT * FROM transactions WHERE transaction_type = 'WITHDRAWAL';",
-        "keywords": [],
-    },
-    {
-        "id": 4,
-        "difficulty": "beginner",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vypsat first_name klientů z města Praha, ale obsahuje chybu.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name  | city\n"
-            "----------+------------+------------+-------\n"
-            "101       | Jan        | Novak      | Praha\n"
-            "102       | Petra      | Svobodova  | Brno\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": "SELECT first_name FROM clients WHERE city = Praha;",
-        "hint": "Textová hodnota musí být v jednoduchých uvozovkách.",
-        "solution": "SELECT first_name FROM clients WHERE city = 'Praha';",
-        "expected_answer": "SELECT first_name FROM clients WHERE city = 'Praha';",
-        "keywords": [],
-    },
-    {
-        "id": 5,
-        "difficulty": "beginner",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit čísla účtů s balance vyšší než 50000, ale je v něm překlep.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": "SELECT account_number FORM accounts WHERE balance > 50000;",
-        "hint": "Zkontroluj správný zápis FROM.",
-        "solution": "SELECT account_number FROM accounts WHERE balance > 50000;",
-        "expected_answer": "SELECT account_number FROM accounts WHERE balance > 50000;",
-        "keywords": [],
-    },
-    {
-        "id": 6,
-        "difficulty": "beginner",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit všechny úvěry s interest_rate vyšší než 5, ale používá chybný název sloupce.\n\n"
-            "Tabulka: loans\n"
-            "loan_id | client_id | loan_amount | interest_rate | status\n"
-            "--------+-----------+-------------+---------------+--------\n"
-            "3001    | 101       | 250000      | 4.9           | ACTIVE\n"
-            "3002    | 102       | 180000      | 6.1           | ACTIVE\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": "SELECT * FROM loans WHERE interest > 5;",
-        "hint": "Použij přesný název sloupce.",
-        "solution": "SELECT * FROM loans WHERE interest_rate > 5;",
-        "expected_answer": "SELECT * FROM loans WHERE interest_rate > 5;",
-        "keywords": [],
-    },
-    {
-        "id": 7,
-        "difficulty": "beginner",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name  | city   | monthly_income\n"
-            "----------+------------+------------+--------+---------------\n"
-            "101       | Jan        | Novak      | Praha  | 28000\n"
-            "102       | Petra      | Svobodova  | Brno   | 42000"
-        ),
-        "sql": "SELECT * FROM clients WHERE monthly_income > 30000;",
-        "hint": "Zaměř se na filtr a na to, že SELECT * vrací všechny sloupce.",
-        "solution": (
-            "Dotaz vrátí všechny sloupce všech klientů, jejichž monthly_income je vyšší než 30000."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí všechny klienty s monthly_income vyšším než 30000."
-        ),
-        "keywords": ["klient", "monthly_income", "vyšším", "30000"],
-    },
-    {
-        "id": 8,
-        "difficulty": "beginner",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type | note\n"
-            "---------------+------------+------------------+--------+------------------+-----------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL       | ATM Praha\n"
-            "9002           | 5002       | 2024-01-12       | 12000  | DEPOSIT          | Cash desk"
-        ),
-        "sql": "SELECT * FROM transactions WHERE amount > 10000;",
-        "hint": "Zaměř se na amount > 10000.",
-        "solution": (
-            "Dotaz vrátí všechny transakce, jejichž amount je vyšší než 10000."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí transakce s amount vyšším než 10000."
-        ),
-        "keywords": ["transakce", "amount", "vyšším", "10000"],
-    },
-    {
-        "id": 9,
-        "difficulty": "beginner",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | -200\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000"
-        ),
-        "sql": "SELECT account_number, balance FROM accounts WHERE balance < 0;",
-        "hint": "Vrací jen dva sloupce a pouze záporný balance.",
-        "solution": (
-            "Dotaz vrátí account_number a balance pro účty se záporným zůstatkem."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí account_number a balance účtů se záporným balance."
-        ),
-        "keywords": ["account_number", "balance", "záporn"],
-    },
-
-    # =========================================================
-    # INTERMEDIATE
-    # =========================================================
-    {
-        "id": 10,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vypiš jméno klienta a číslo jeho účtu.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "102       | Petra      | Svobodova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000\n\n"
-            "Vazba:\n"
-            "accounts.client_id = clients.client_id"
-        ),
-        "sql": None,
-        "hint": "Použij JOIN mezi clients a accounts.",
-        "solution": (
-            "SELECT c.first_name, c.last_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, c.last_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 11,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Očísluj transakce každého účtu od nejnovější po nejstarší pomocí ROW_NUMBER().\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type\n"
-            "---------------+------------+------------------+--------+-----------------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL\n"
-            "9002           | 5001       | 2024-01-12       | 8000   | DEPOSIT"
-        ),
-        "sql": None,
-        "hint": "Použij PARTITION BY account_id ORDER BY transaction_date DESC.",
-        "solution": (
-            "SELECT account_id, transaction_date, amount, "
-            "ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT account_id, transaction_date, amount, "
-            "ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 12,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "U každé transakce zobraz také celkový součet amount na stejném účtu.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type\n"
-            "---------------+------------+------------------+--------+-----------------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL\n"
-            "9002           | 5001       | 2024-01-12       | 8000   | DEPOSIT"
-        ),
-        "sql": None,
-        "hint": "Použij SUM(amount) OVER (PARTITION BY account_id).",
-        "solution": (
-            "SELECT transaction_id, account_id, amount, "
-            "SUM(amount) OVER (PARTITION BY account_id) AS total_amount_per_account "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT transaction_id, account_id, amount, "
-            "SUM(amount) OVER (PARTITION BY account_id) AS total_amount_per_account "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 13,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vypiš všechny klienty a případně čísla jejich účtů, tedy i klienty bez účtu.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000"
-        ),
-        "sql": None,
-        "hint": "Použij LEFT JOIN.",
-        "solution": (
-            "SELECT c.first_name, c.last_name, a.account_number "
-            "FROM clients c LEFT JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, c.last_name, a.account_number "
-            "FROM clients c LEFT JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 14,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Zjisti počet účtů každého klienta, ale zobraz jen klienty s více než jedním účtem.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5003       | 101       | CZ5508000000199999999999   | 30000"
-        ),
-        "sql": None,
-        "hint": "Použij GROUP BY client_id a HAVING COUNT(*) > 1.",
-        "solution": (
-            "SELECT client_id, COUNT(*) "
-            "FROM accounts "
-            "GROUP BY client_id "
-            "HAVING COUNT(*) > 1;"
-        ),
-        "expected_answer": (
-            "SELECT client_id, COUNT(*) "
-            "FROM accounts "
-            "GROUP BY client_id "
-            "HAVING COUNT(*) > 1;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 15,
-        "difficulty": "intermediate",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "U každé transakce zobraz text, zda jde o vysokou nebo běžnou amount.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type\n"
-            "---------------+------------+------------------+--------+-----------------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL\n"
-            "9003           | 5001       | 2024-01-20       | 78000  | TRANSFER"
-        ),
-        "sql": None,
-        "hint": "Použij CASE WHEN amount > 50000 THEN 'HIGH' ELSE 'STANDARD' END.",
-        "solution": (
-            "SELECT transaction_id, amount, "
-            "CASE WHEN amount > 50000 THEN 'HIGH' ELSE 'STANDARD' END AS transaction_level "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT transaction_id, amount, "
-            "CASE WHEN amount > 50000 THEN 'HIGH' ELSE 'STANDARD' END AS transaction_level "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 16,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit jméno klienta a číslo účtu, ale obsahuje chybu v JOIN.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "102       | Petra      | Svobodova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.account_id;"
-        ),
-        "hint": "Účet se váže přes client_id, ne account_id.",
-        "solution": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 17,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má spočítat počet účtů každého klienta, ale chybí správná klauzule.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5003       | 101       | CZ5508000000199999999999   | 30000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": "SELECT client_id, COUNT(*) FROM accounts;",
-        "hint": "Pokud používáš COUNT(*) s client_id, musíš seskupovat.",
-        "solution": "SELECT client_id, COUNT(*) FROM accounts GROUP BY client_id;",
-        "expected_answer": "SELECT client_id, COUNT(*) FROM accounts GROUP BY client_id;",
-        "keywords": [],
-    },
-    {
-        "id": 18,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má očíslovat transakce v rámci účtu, ale analytická funkce je neúplná.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT account_id, transaction_date, "
-            "ROW_NUMBER() OVER (ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "hint": "Pořadí se má počítat zvlášť pro každý účet.",
-        "solution": (
-            "SELECT account_id, transaction_date, "
-            "ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT account_id, transaction_date, "
-            "ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 19,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit všechny klienty i bez účtu, ale je v něm chyba v typu JOIN.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "hint": "Pokud chceš i klienty bez účtu, nestačí JOIN.",
-        "solution": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c LEFT JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c LEFT JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 20,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit jen klienty s více než jedním účtem, ale agregaci filtruje špatně.\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5003       | 101       | CZ5508000000199999999999\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT client_id, COUNT(*) "
-            "FROM accounts "
-            "WHERE COUNT(*) > 1 "
-            "GROUP BY client_id;"
-        ),
-        "hint": "Agregaci filtruj pomocí HAVING.",
-        "solution": (
-            "SELECT client_id, COUNT(*) "
-            "FROM accounts "
-            "GROUP BY client_id "
-            "HAVING COUNT(*) > 1;"
-        ),
-        "expected_answer": (
-            "SELECT client_id, COUNT(*) "
-            "FROM accounts "
-            "GROUP BY client_id "
-            "HAVING COUNT(*) > 1;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 21,
-        "difficulty": "intermediate",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má označit vysoké transakce pomocí CASE, ale má chybnou podmínku.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | amount\n"
-            "---------------+-------\n"
-            "9001           | 1500\n"
-            "9003           | 78000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT transaction_id, amount, "
-            "CASE WHEN amount < 50000 THEN 'HIGH' ELSE 'STANDARD' END AS transaction_level "
-            "FROM transactions;"
-        ),
-        "hint": "HIGH má být pro vyšší amount.",
-        "solution": (
-            "SELECT transaction_id, amount, "
-            "CASE WHEN amount > 50000 THEN 'HIGH' ELSE 'STANDARD' END AS transaction_level "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT transaction_id, amount, "
-            "CASE WHEN amount > 50000 THEN 'HIGH' ELSE 'STANDARD' END AS transaction_level "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 22,
-        "difficulty": "intermediate",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "102       | Petra      | Svobodova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number              | balance\n"
-            "-----------+-----------+-----------------------------+--------\n"
-            "5001       | 101       | CZ6508000000192000145399   | 125000\n"
-            "5002       | 102       | CZ1201000000198765432107   | 54000\n\n"
-            "Vazba:\n"
-            "accounts.client_id = clients.client_id"
-        ),
-        "sql": (
-            "SELECT c.first_name, c.last_name, a.account_number "
-            "FROM clients c JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "hint": "JOIN propojí klienty s jejich účty.",
-        "solution": (
-            "Dotaz vrátí first_name, last_name a account_number klientů."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí klienty a jejich account_number."
-        ),
-        "keywords": ["klient", "account_number"],
-    },
-    {
-        "id": 23,
-        "difficulty": "intermediate",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000"
-        ),
-        "sql": (
-            "SELECT account_id, amount, "
-            "SUM(amount) OVER (PARTITION BY account_id) AS total_amount_per_account "
-            "FROM transactions;"
-        ),
-        "hint": "Analytická SUM neslučuje řádky, jen doplní vypočtenou hodnotu.",
-        "solution": (
-            "Dotaz vrátí transakce a u každé zobrazí total_amount_per_account pro stejný účet."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí transakce a u každé zobrazí total_amount_per_account stejného účtu."
-        ),
-        "keywords": ["transakce", "total_amount_per_account", "každé"],
-    },
-    {
-        "id": 24,
-        "difficulty": "intermediate",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000"
-        ),
-        "sql": (
-            "SELECT account_id, transaction_date, "
-            "ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY transaction_date DESC) AS row_num "
-            "FROM transactions;"
-        ),
-        "hint": "ROW_NUMBER čísluje řádky v rámci account_id.",
-        "solution": (
-            "Dotaz očísluje transakce v rámci každého account_id od nejnovější po nejstarší."
-        ),
-        "expected_answer": (
-            "Dotaz očísluje transakce v rámci každého account_id od nejnovější po nejstarší."
-        ),
-        "keywords": ["očísluje", "transakce", "account_id"],
-    },
-    {
-        "id": 25,
-        "difficulty": "intermediate",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107"
-        ),
-        "sql": (
-            "SELECT c.first_name, a.account_number "
-            "FROM clients c LEFT JOIN accounts a ON c.client_id = a.client_id;"
-        ),
-        "hint": "LEFT JOIN zachová všechny klienty.",
-        "solution": (
-            "Dotaz vrátí všechny klienty a pokud mají účet, tak i account_number."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí všechny klienty a případně jejich account_number."
-        ),
-        "keywords": ["všechny klienty", "account_number"],
-    },
-
-    # =========================================================
-    # ADVANCED
-    # =========================================================
-    {
-        "id": 26,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vypiš first_name klienta, account_number a amount pro všechny transakce vyšší než 50000.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "102       | Petra      | Svobodova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type\n"
-            "---------------+------------+------------------+--------+-----------------\n"
-            "9001           | 5001       | 2024-01-10       | 1500   | WITHDRAWAL\n"
-            "9003           | 5001       | 2024-01-20       | 78000  | TRANSFER\n\n"
-            "Vazby:\n"
-            "accounts.client_id = clients.client_id\n"
-            "transactions.account_id = accounts.account_id"
-        ),
-        "sql": None,
-        "hint": "Budeš potřebovat spojit 3 tabulky.",
-        "solution": (
-            "SELECT c.first_name, a.account_number, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON a.account_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, a.account_number, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON a.account_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 27,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "U každé transakce zobraz také amount předchozí transakce na stejném účtu podle data.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000"
-        ),
-        "sql": None,
-        "hint": "Použij LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date).",
-        "solution": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 28,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Najdi všechny transakce, jejichž note začíná VS: a pokračuje přesně šesti číslicemi.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | transaction_type | note\n"
-            "---------------+------------+------------------+--------+------------------+-----------\n"
-            "9005           | 5001       | 2024-02-01       | 12000  | TRANSFER         | VS:123456\n"
-            "9006           | 5001       | 2024-02-02       | 5000   | TRANSFER         | VS:12345A"
-        ),
-        "sql": None,
-        "hint": "Použij REGEXP_LIKE(note, '^VS:[0-9]{6}$').",
-        "solution": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{6}$');"
-        ),
-        "expected_answer": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{6}$');"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 29,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Z note transakce vytáhni šestimístný variabilní symbol ve formátu VS:123456.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | note\n"
-            "---------------+----------------\n"
-            "9005           | VS:123456\n"
-            "9006           | salary payment"
-        ),
-        "sql": None,
-        "hint": "Použij REGEXP_SUBSTR(note, 'VS:[0-9]{6}').",
-        "solution": (
-            "SELECT transaction_id, REGEXP_SUBSTR(note, 'VS:[0-9]{6}') AS variable_symbol "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT transaction_id, REGEXP_SUBSTR(note, 'VS:[0-9]{6}') AS variable_symbol "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 30,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Vrať klienty, kteří nemají žádný účet.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107"
-        ),
-        "sql": None,
-        "hint": "Použij NOT EXISTS.",
-        "solution": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = c.client_id);"
-        ),
-        "expected_answer": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = c.client_id);"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 31,
-        "difficulty": "advanced",
-        "type": "write-query",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Seřaď transakce podle amount v rámci každého účtu a přiřaď pořadí pomocí RANK().\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | amount\n"
-            "---------------+------------+-------\n"
-            "9001           | 5001       | 1500\n"
-            "9003           | 5001       | 78000"
-        ),
-        "sql": None,
-        "hint": "Použij RANK() OVER (PARTITION BY account_id ORDER BY amount DESC).",
-        "solution": (
-            "SELECT account_id, amount, "
-            "RANK() OVER (PARTITION BY account_id ORDER BY amount DESC) AS amount_rank "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT account_id, amount, "
-            "RANK() OVER (PARTITION BY account_id ORDER BY amount DESC) AS amount_rank "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 32,
-        "difficulty": "advanced",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit first_name klienta a amount transakce nad 50000, ale obsahuje chybu v JOIN.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "102       | Petra      | Svobodova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9003           | 5001       | 2024-01-20       | 78000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT c.first_name, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON c.client_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "hint": "Transactions se vážou na accounts přes account_id.",
-        "solution": (
-            "SELECT c.first_name, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON a.account_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "expected_answer": (
-            "SELECT c.first_name, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON a.account_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 33,
-        "difficulty": "advanced",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit previous_amount transakce na stejném účtu, ale chybí PARTITION BY.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "hint": "Předchozí transakce má být v rámci stejného účtu.",
-        "solution": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 34,
-        "difficulty": "advanced",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má najít note ve formátu VS: a šesti číslic, ale regexp hledá jen pět číslic.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | note\n"
-            "---------------+------------+-----------\n"
-            "9005           | 5001       | VS:123456\n"
-            "9006           | 5001       | VS:12345A\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{5}$');"
-        ),
-        "hint": "Po VS: má být přesně šest číslic.",
-        "solution": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{6}$');"
-        ),
-        "expected_answer": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{6}$');"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 35,
-        "difficulty": "advanced",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vrátit klienty bez účtu pomocí NOT EXISTS, ale poddotaz používá chybnou vazbu.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.account_id = c.client_id);"
-        ),
-        "hint": "Porovnávej client_id s client_id.",
-        "solution": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = c.client_id);"
-        ),
-        "expected_answer": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = c.client_id);"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 36,
-        "difficulty": "advanced",
-        "type": "find-bug",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Úkol:\n"
-            "Dotaz má vytáhnout variable_symbol z note, ale používá špatnou regexp funkci.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | note\n"
-            "---------------+----------------\n"
-            "9005           | VS:123456\n"
-            "9006           | salary payment\n\n"
-            "Oprav SQL dotaz přímo v editoru."
-        ),
-        "sql": (
-            "SELECT transaction_id, REGEXP_LIKE(note, 'VS:[0-9]{6}') AS variable_symbol "
-            "FROM transactions;"
-        ),
-        "hint": "REGEXP_LIKE vrací podmínku, ne textový výřez.",
-        "solution": (
-            "SELECT transaction_id, REGEXP_SUBSTR(note, 'VS:[0-9]{6}') AS variable_symbol "
-            "FROM transactions;"
-        ),
-        "expected_answer": (
-            "SELECT transaction_id, REGEXP_SUBSTR(note, 'VS:[0-9]{6}') AS variable_symbol "
-            "FROM transactions;"
-        ),
-        "keywords": [],
-    },
-    {
-        "id": 37,
-        "difficulty": "advanced",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount\n"
-            "---------------+------------+------------------+-------\n"
-            "9001           | 5001       | 2024-01-10       | 1500\n"
-            "9002           | 5001       | 2024-01-12       | 8000"
-        ),
-        "sql": (
-            "SELECT account_id, transaction_date, amount, "
-            "LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_date) AS previous_amount "
-            "FROM transactions;"
-        ),
-        "hint": "LAG vrací hodnotu z předchozího řádku ve stejné skupině.",
-        "solution": (
-            "Dotaz vrátí transakce a u každé zobrazí previous_amount předchozí transakce stejného účtu."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí transakce a u každé zobrazí previous_amount předchozí transakce stejného účtu."
-        ),
-        "keywords": ["transakce", "previous_amount", "předchozí"],
-    },
-    {
-        "id": 38,
-        "difficulty": "advanced",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | transaction_date | amount | note\n"
-            "---------------+------------+------------------+--------+-----------\n"
-            "9005           | 5001       | 2024-02-01       | 12000  | VS:123456\n"
-            "9006           | 5001       | 2024-02-02       | 5000   | VS:12345A"
-        ),
-        "sql": (
-            "SELECT * FROM transactions "
-            "WHERE REGEXP_LIKE(note, '^VS:[0-9]{6}$');"
-        ),
-        "hint": "Zaměř se na vzor v note.",
-        "solution": (
-            "Dotaz vrátí transakce, jejichž note přesně odpovídá formátu VS: následovanému šesti číslicemi."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí transakce s note ve formátu VS: a šesti číslicemi."
-        ),
-        "keywords": ["transakce", "note", "VS", "šesti"],
-    },
-    {
-        "id": 39,
-        "difficulty": "advanced",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name\n"
-            "----------+-----------\n"
-            "101       | Jan\n"
-            "102       | Petra\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | amount\n"
-            "---------------+------------+-------\n"
-            "9001           | 5001       | 1500\n"
-            "9003           | 5001       | 78000"
-        ),
-        "sql": (
-            "SELECT c.first_name, a.account_number, t.amount "
-            "FROM clients c "
-            "JOIN accounts a ON c.client_id = a.client_id "
-            "JOIN transactions t ON a.account_id = t.account_id "
-            "WHERE t.amount > 50000;"
-        ),
-        "hint": "Zaměř se na spojení 3 tabulek a filtr podle amount.",
-        "solution": (
-            "Dotaz vrátí first_name klienta, account_number a amount transakcí vyšších než 50000."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí klienta, account_number a amount transakcí vyšších než 50000."
-        ),
-        "keywords": ["klient", "account_number", "amount", "50000"],
-    },
-    {
-        "id": 40,
-        "difficulty": "advanced",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: clients\n"
-            "client_id | first_name | last_name\n"
-            "----------+------------+-----------\n"
-            "101       | Jan        | Novak\n"
-            "103       | Eva        | Dvorakova\n\n"
-            "Tabulka: accounts\n"
-            "account_id | client_id | account_number\n"
-            "-----------+-----------+-----------------------------\n"
-            "5001       | 101       | CZ6508000000192000145399\n"
-            "5002       | 102       | CZ1201000000198765432107"
-        ),
-        "sql": (
-            "SELECT c.client_id, c.first_name, c.last_name "
-            "FROM clients c "
-            "WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = c.client_id);"
-        ),
-        "hint": "NOT EXISTS vrací klienty, ke kterým neexistuje účet.",
-        "solution": (
-            "Dotaz vrátí klienty, kteří nemají žádný účet."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí klienty bez účtu."
-        ),
-        "keywords": ["klienty", "bez účtu"],
-    },
-    {
-        "id": 41,
-        "difficulty": "advanced",
-        "type": "explain-result",
-        "prompt": (
-            "Pracuješ v Oracle databázi.\n\n"
-            "Vysvětli, co vrátí následující SQL dotaz.\n\n"
-            "Tabulka: transactions\n"
-            "transaction_id | account_id | amount\n"
-            "---------------+------------+-------\n"
-            "9001           | 5001       | 1500\n"
-            "9003           | 5001       | 78000"
-        ),
-        "sql": (
-            "SELECT account_id, amount, "
-            "RANK() OVER (PARTITION BY account_id ORDER BY amount DESC) AS amount_rank "
-            "FROM transactions;"
-        ),
-        "hint": "RANK určuje pořadí amount v rámci stejného účtu.",
-        "solution": (
-            "Dotaz vrátí transakce a pořadí jejich amount v rámci stejného account_id od nejvyšší."
-        ),
-        "expected_answer": (
-            "Dotaz vrátí transakce a pořadí amount v rámci account_id od nejvyšší."
-        ),
-        "keywords": ["transakce", "pořadí", "amount", "account_id"],
-    },
+    # Beginner: šest úloh od každého typu.
+    _task(
+        1, "beginner", "find-bug", ("customers",),
+        "Oprav zápis textové hodnoty ve filtru města.",
+        "SELECT name FROM customers WHERE city = 'Prague';",
+        "Textový literál musí být v jednoduchých uvozovkách.",
+        sql="SELECT name FROM customers WHERE city = Prague;",
+    ),
+    _task(
+        2, "beginner", "write-query", ("accounts",),
+        "Vypiš všechny sloupce účtů.",
+        "SELECT * FROM accounts;",
+        "Použij SELECT * FROM accounts.",
+    ),
+    _task(
+        4, "beginner", "write-query", ("customers",),
+        "Vypiš pouze name a city zákazníků v tomto pořadí.",
+        "SELECT name, city FROM customers;",
+        "Za SELECT uveď name, city.",
+    ),
+    _task(
+        5, "beginner", "write-query", ("accounts",),
+        "Vypiš account_id a balance účtů se zůstatkem větším než 1000.",
+        "SELECT account_id, balance FROM accounts WHERE balance > 1000;",
+        "Použij WHERE balance > 1000.",
+    ),
+    _task(
+        6, "beginner", "write-query", ("accounts",),
+        "Vypiš account_id a balance, seřaď sestupně podle balance.",
+        "SELECT account_id, balance FROM accounts ORDER BY balance DESC;",
+        "Použij ORDER BY balance DESC.",
+    ),
+    _task(
+        7, "beginner", "write-query", ("accounts",),
+        "Vypiš account_id účtů se zůstatkem od 500 do 1500 včetně obou mezí.",
+        "SELECT account_id FROM accounts WHERE balance BETWEEN 500 AND 1500;",
+        "Použij BETWEEN 500 AND 1500.",
+    ),
+    _task(
+        8, "beginner", "write-query", ("customers",),
+        "Vypiš name zákazníků z měst Prague nebo Brno pomocí IN.",
+        "SELECT name FROM customers WHERE city IN ('Prague', 'Brno');",
+        "Použij IN ('Prague', 'Brno') v uvedeném pořadí.",
+    ),
+    _task(
+        9, "beginner", "find-bug", ("customers",),
+        "Oprav test chybějícího e-mailu.",
+        "SELECT name FROM customers WHERE email IS NULL;",
+        "NULL se testuje pomocí IS NULL.",
+        sql="SELECT name FROM customers WHERE email = NULL;",
+    ),
+    _task(
+        10, "beginner", "find-bug", ("customers",),
+        "Oprav vzor LIKE tak, aby vybral jména začínající na Eva.",
+        "SELECT name FROM customers WHERE name LIKE 'Eva%';",
+        "Pro libovolný počet znaků používá SQL znak % místo *.",
+        sql="SELECT name FROM customers WHERE name LIKE 'Eva*';",
+    ),
+    _task(
+        11, "beginner", "find-bug", ("accounts",),
+        "Oprav pořadí klauzulí; zachovej filtr i sestupné řazení.",
+        "SELECT account_id FROM accounts WHERE balance > 0 ORDER BY balance DESC;",
+        "WHERE musí předcházet ORDER BY.",
+        sql="SELECT account_id FROM accounts ORDER BY balance DESC WHERE balance > 0;",
+    ),
+    _task(
+        12, "beginner", "find-bug", ("accounts",),
+        "Dotaz má spočítat všechny účty. Oprav neplatný argument COUNT.",
+        "SELECT COUNT(*) FROM accounts;",
+        "Pro počet všech řádků použij COUNT(*).",
+        sql="SELECT COUNT() FROM accounts;",
+    ),
+    _task(
+        13, "beginner", "find-bug", ("accounts",),
+        "Oprav neexistující název sloupce pro součet zůstatků.",
+        "SELECT SUM(balance) FROM accounts;",
+        "Sloupec se jmenuje balance, nikoli balances.",
+        sql="SELECT SUM(balances) FROM accounts;",
+    ),
+    _task(
+        14, "beginner", "explain-result", ("accounts",),
+        "Jaká je průměrná hodnota vrácená dotazem? Uveď význam i číslo.",
+        "Průměrný zůstatek je 1000.",
+        "Sečti 1500 a 500 a vyděl počtem účtů.",
+        sql="SELECT AVG(balance) FROM accounts;",
+        keywords=("průměr", "1000"),
+    ),
+    _task(
+        15, "beginner", "explain-result", ("customers",),
+        "Kolik vyplněných e-mailů dotaz spočítá? Uveď význam i počet.",
+        "Počet vyplněných e-mailů je 1; NULL se nepočítá.",
+        "COUNT(sloupec) ignoruje NULL.",
+        sql="SELECT COUNT(email) FROM customers;",
+        keywords=("počet", "1", "null"),
+    ),
+    _task(
+        16, "beginner", "explain-result", ("customers",),
+        "Která města vrátí dotaz a proč nejsou opakovaná? Pořadí není zaručeno.",
+        "Vrátí unikátní města Prague a Brno.",
+        "DISTINCT odstraňuje duplicity.",
+        sql="SELECT DISTINCT city FROM customers;",
+        keywords=("unikátní", "prague", "brno"),
+    ),
+    _task(
+        17, "beginner", "explain-result", ("accounts",),
+        "Jaký celkový zůstatek dotaz vrátí? Uveď význam i hodnotu.",
+        "Celkový součet zůstatků je 2000.",
+        "SUM sčítá zůstatky všech účtů.",
+        sql="SELECT SUM(balance) FROM accounts;",
+        keywords=("součet", "2000"),
+    ),
+    _task(
+        18, "beginner", "explain-result", ("customers",),
+        "Které jméno vrátí filtr na známý e-mail a proč?",
+        "Vrátí Eva Mala, protože má vyplněný e-mail.",
+        "IS NOT NULL ponechá jen vyplněné hodnoty.",
+        sql="SELECT name FROM customers WHERE email IS NOT NULL;",
+        keywords=("eva mala", "vyplněný"),
+    ),
+    _task(
+        19, "beginner", "explain-result", ("accounts",),
+        "Které account_id vrátí kombinace podmínek a jaký stav má tento účet?",
+        "Vrátí účet 10, který má stav ACTIVE a kladný zůstatek.",
+        "Obě podmínky spojené AND musí platit současně.",
+        sql="SELECT account_id FROM accounts WHERE status = 'ACTIVE' AND balance > 0;",
+        keywords=("10", "active", "kladný"),
+    ),
+    # Intermediate: joiny, agregace a základy analytických funkcí.
+    _task(
+        3, "intermediate", "explain-result", ("accounts",),
+        "Popiš seskupení i počty účtů v jednotlivých stavech.",
+        "Pro každý stav vrátí počet účtů: ACTIVE má 1 a BLOCKED má 1.",
+        "GROUP BY vytvoří jednu skupinu pro každý stav.",
+        sql="SELECT status, COUNT(*) FROM accounts GROUP BY status;",
+        keywords=("stav", "počet", "active", "blocked"),
+    ),
+    _task(
+        20, "intermediate", "write-query", ("customers", "accounts"),
+        "Vypiš c.name a a.balance pomocí INNER JOIN. "
+        "Použij aliasy customers c a accounts a, vazba je customer_id.",
+        "SELECT c.name, a.balance FROM customers c INNER JOIN accounts a "
+        "ON c.customer_id = a.customer_id;",
+        "Začni FROM customers c INNER JOIN accounts a; v ON nejprve uveď c.customer_id.",
+    ),
+    _task(
+        21, "intermediate", "write-query", ("accounts", "transactions"),
+        "Pro každý účet včetně účtů bez transakcí vypiš a.account_id "
+        "a COUNT(t.transaction_id) AS transaction_count. Použij LEFT JOIN, "
+        "aliasy accounts a a transactions t, vazba je account_id.",
+        "SELECT a.account_id, COUNT(t.transaction_id) AS transaction_count "
+        "FROM accounts a LEFT JOIN transactions t ON a.account_id = t.account_id "
+        "GROUP BY a.account_id;",
+        "Po LEFT JOIN seskup podle a.account_id; nepočítej COUNT(*).",
+    ),
+    _task(
+        22, "intermediate", "write-query", ("accounts",),
+        "Vypiš branch_id a SUM(balance) AS total_balance pro pobočky se součtem "
+        "zůstatků větším než 1000.",
+        "SELECT branch_id, SUM(balance) AS total_balance FROM accounts "
+        "GROUP BY branch_id HAVING SUM(balance) > 1000;",
+        "Použij GROUP BY branch_id a HAVING SUM(balance) > 1000.",
+    ),
+    _task(
+        23, "intermediate", "write-query", ("accounts",),
+        "Vypiš account_id a CASE jako balance_band: při balance >= 1000 vrať HIGH, "
+        "jinak LOW.",
+        "SELECT account_id, CASE WHEN balance >= 1000 THEN 'HIGH' ELSE 'LOW' END "
+        "AS balance_band FROM accounts;",
+        "Použij CASE WHEN ... THEN ... ELSE ... END AS balance_band.",
+    ),
+    _task(
+        24, "intermediate", "write-query", ("accounts",),
+        "Vypiš account_id a ROW_NUMBER() AS position pro každý customer_id zvlášť. "
+        "Uvnitř okna řaď podle balance DESC, account_id.",
+        "SELECT account_id, ROW_NUMBER() OVER (PARTITION BY customer_id "
+        "ORDER BY balance DESC, account_id) AS position FROM accounts;",
+        "Oddíl okna urči PARTITION BY customer_id, pak přidej uvedené ORDER BY.",
+    ),
+    _task(
+        25, "intermediate", "write-query", ("transactions",),
+        "Vypiš transaction_id a průběžný součet amount AS running_amount "
+        "pro každý account_id zvlášť. Řaď v okně podle transaction_id "
+        "a použij ROWS UNBOUNDED PRECEDING.",
+        "SELECT transaction_id, SUM(amount) OVER (PARTITION BY account_id "
+        "ORDER BY transaction_id ROWS UNBOUNDED PRECEDING) AS running_amount "
+        "FROM transactions;",
+        "SUM(amount) OVER obsahuje PARTITION BY, ORDER BY a rámec ROWS.",
+    ),
+    _task(
+        26, "intermediate", "find-bug", ("customers", "accounts"),
+        "Oprav vazbu INNER JOIN zákazníků na jejich účty podle customer_id.",
+        "SELECT c.name, a.account_id FROM customers c INNER JOIN accounts a "
+        "ON c.customer_id = a.customer_id;",
+        "account_id není identifikátor zákazníka.",
+        sql="SELECT c.name, a.account_id FROM customers c INNER JOIN accounts a "
+        "ON c.customer_id = a.account_id;",
+    ),
+    _task(
+        27, "intermediate", "find-bug", ("accounts",),
+        "Oprav filtr na součet skupiny; zachovej GROUP BY i mez 1000.",
+        "SELECT branch_id, SUM(balance) FROM accounts GROUP BY branch_id "
+        "HAVING SUM(balance) > 1000;",
+        "Agregovaný součet filtruj pomocí HAVING až za GROUP BY.",
+        sql="SELECT branch_id, SUM(balance) FROM accounts WHERE SUM(balance) > 1000 "
+        "GROUP BY branch_id;",
+    ),
+    _task(
+        28, "intermediate", "find-bug", ("accounts",),
+        "Doplň chybějící seskupení; požadován je součet pro každý status.",
+        "SELECT status, SUM(balance) FROM accounts GROUP BY status;",
+        "Neagregovaný status musí být v GROUP BY.",
+        sql="SELECT status, SUM(balance) FROM accounts;",
+    ),
+    _task(
+        29, "intermediate", "find-bug", ("accounts",),
+        "Oprav nedokončený výraz CASE; jiné části neměň.",
+        "SELECT account_id, CASE WHEN balance > 0 THEN 'POSITIVE' ELSE 'OTHER' END "
+        "AS balance_label FROM accounts;",
+        "Výraz CASE končí slovem END před aliasem.",
+        sql="SELECT account_id, CASE WHEN balance > 0 THEN 'POSITIVE' ELSE 'OTHER' "
+        "AS balance_label FROM accounts;",
+    ),
+    _task(
+        30, "intermediate", "find-bug", ("accounts", "transactions"),
+        "Dotaz má zachovat i účty bez kreditních transakcí. Přesuň filtr "
+        "t.kind do ON za vazbu pomocí AND a odstraň WHERE.",
+        "SELECT a.account_id, t.amount FROM accounts a LEFT JOIN transactions t "
+        "ON a.account_id = t.account_id AND t.kind = 'CREDIT';",
+        "WHERE na pravé tabulce zahazuje řádky doplněné hodnotami NULL.",
+        sql="SELECT a.account_id, t.amount FROM accounts a LEFT JOIN transactions t "
+        "ON a.account_id = t.account_id WHERE t.kind = 'CREDIT';",
+    ),
+    _task(
+        31, "intermediate", "find-bug", ("accounts",),
+        "Dotaz má vybrat pouze aktivní účty se zůstatkem pod 0 nebo nad 1000. "
+        "Oprav prioritu operátorů přidáním závorek kolem obou mezí.",
+        "SELECT account_id FROM accounts WHERE status = 'ACTIVE' "
+        "AND (balance < 0 OR balance > 1000);",
+        "AND má vyšší prioritu než OR.",
+        sql="SELECT account_id FROM accounts WHERE status = 'ACTIVE' "
+        "AND balance < 0 OR balance > 1000;",
+    ),
+    _task(
+        32, "intermediate", "explain-result", ("customers", "accounts"),
+        "Jaká jména a zůstatky vrátí spojení? Pořadí řádků není zaručeno.",
+        "Spojení vrátí Adam Novak se zůstatkem 1500 a Eva Mala se zůstatkem 500.",
+        "Každý zákazník má v ukázce právě jeden účet.",
+        sql="SELECT c.name, a.balance FROM customers c INNER JOIN accounts a "
+        "ON c.customer_id = a.customer_id;",
+        keywords=("adam novak", "1500", "eva mala", "500"),
+    ),
+    _task(
+        33, "intermediate", "explain-result", ("accounts", "transactions"),
+        "Jaké počty transakcí vrátí dotaz pro účty 10 a 20? Vysvětli nulu.",
+        "Účet 10 má 2 transakce; účet 20 má 0, protože COUNT ignoruje NULL.",
+        "LEFT JOIN zachová účet bez transakcí.",
+        sql="SELECT a.account_id, COUNT(t.transaction_id) AS transaction_count "
+        "FROM accounts a LEFT JOIN transactions t ON a.account_id = t.account_id "
+        "GROUP BY a.account_id ORDER BY a.account_id;",
+        keywords=("2 transakce", "0", "null"),
+    ),
+    _task(
+        34, "intermediate", "explain-result", ("accounts",),
+        "Která pobočka projde HAVING a jaký má součet?",
+        "Pobočka 1 má součet 1500 a jako jediná projde filtrem.",
+        "Pobočka 2 má pouze 500.",
+        sql="SELECT branch_id, SUM(balance) AS total_balance FROM accounts "
+        "GROUP BY branch_id HAVING SUM(balance) > 1000;",
+        keywords=("pobočka 1", "1500"),
+    ),
+    _task(
+        35, "intermediate", "explain-result", ("accounts",),
+        "Jaká pořadí přidělí RANK účtům 10 a 20? Zmiň obě pořadí.",
+        "Účet 10 má pořadí 1, účet 20 má pořadí 2 podle sestupného zůstatku.",
+        "RANK řadí nejvyšší balance jako první; shody by sdílely pořadí.",
+        sql="SELECT account_id, RANK() OVER (ORDER BY balance DESC) AS balance_rank "
+        "FROM accounts ORDER BY account_id;",
+        keywords=("pořadí 1", "pořadí 2", "sestup"),
+    ),
+    _task(
+        36, "intermediate", "explain-result", ("transactions",),
+        "Jaký průběžný součet mají transakce 100 a 101?",
+        "Transakce 100 má průběžný součet 200; transakce 101 má součet 150.",
+        "Druhá transakce odečítá 50 od prvního součtu.",
+        sql="SELECT transaction_id, SUM(amount) OVER (PARTITION BY account_id "
+        "ORDER BY transaction_id ROWS UNBOUNDED PRECEDING) AS running_amount "
+        "FROM transactions ORDER BY transaction_id;",
+        keywords=("200", "150", "součet"),
+    ),
+    # Advanced: korelace, více vazeb, Oracle regex a jemné chyby oken.
+    _task(
+        37, "advanced", "write-query", ("customers", "loans"),
+        "Vypiš c.name zákazníků bez schváleného úvěru pomocí NOT EXISTS. "
+        "Použij customers c a v poddotazu SELECT 1 FROM loans l; "
+        "vazbu l.customer_id = c.customer_id uveď před filtrem status APPROVED.",
+        "SELECT c.name FROM customers c WHERE NOT EXISTS "
+        "(SELECT 1 FROM loans l WHERE l.customer_id = c.customer_id "
+        "AND l.status = 'APPROVED');",
+        "NOT EXISTS testuje nepřítomnost schváleného úvěru daného zákazníka.",
+    ),
+    _task(
+        38, "advanced", "write-query", ("accounts", "transactions"),
+        "Vypiš a.account_id účtů, jejichž balance je větší než čistý součet jejich "
+        "transakcí; účet bez transakcí má součet 0. Použij korelovaný skalární "
+        "poddotaz SUM(t.amount), NVL kolem celého poddotazu a aliasy accounts a, transactions t.",
+        "SELECT a.account_id FROM accounts a WHERE a.balance > "
+        "NVL((SELECT SUM(t.amount) FROM transactions t "
+        "WHERE t.account_id = a.account_id), 0);",
+        "Porovnej a.balance > NVL((SELECT SUM(...) ...), 0).",
+    ),
+    _task(
+        39, "advanced", "write-query", ("customers", "accounts", "branches"),
+        "Vypiš c.name AS customer_name, b.name AS branch_name a a.balance "
+        "aktivních účtů. Spoj postupně customers c, accounts a a branches b "
+        "pomocí INNER JOIN. Vazby: c.customer_id = a.customer_id, "
+        "a.branch_id = b.branch_id. Filtruj a.status = 'ACTIVE'.",
+        "SELECT c.name AS customer_name, b.name AS branch_name, a.balance "
+        "FROM customers c INNER JOIN accounts a ON c.customer_id = a.customer_id "
+        "INNER JOIN branches b ON a.branch_id = b.branch_id WHERE a.status = 'ACTIVE';",
+        "Za druhým ON následuje WHERE s filtrem aktivních účtů.",
+    ),
+    _task(
+        40, "advanced", "write-query", ("transactions",),
+        "Vypiš transaction_id a předchozí amount AS previous_amount pomocí "
+        "LAG(amount). Odděl účty podle account_id a v okně řaď podle transaction_id.",
+        "SELECT transaction_id, LAG(amount) OVER (PARTITION BY account_id "
+        "ORDER BY transaction_id) AS previous_amount FROM transactions;",
+        "Použij LAG(amount) OVER (PARTITION BY account_id ORDER BY transaction_id).",
+    ),
+    _task(
+        41, "advanced", "write-query", ("accounts",),
+        "Vypiš account_id a husté pořadí zůstatků AS balance_rank "
+        "pomocí DENSE_RANK(), v okně řaď podle balance DESC.",
+        "SELECT account_id, DENSE_RANK() OVER (ORDER BY balance DESC) AS balance_rank "
+        "FROM accounts;",
+        "DENSE_RANK nevytváří mezery v pořadí při shodných zůstatcích.",
+    ),
+    _task(
+        42, "advanced", "write-query", ("customers",),
+        "Vypiš customer_id a doménu e-mailu AS email_domain pomocí "
+        "REGEXP_SUBSTR(email, '[^@]+$'). Chybějící e-mail ponech jako NULL.",
+        "SELECT customer_id, REGEXP_SUBSTR(email, '[^@]+$') AS email_domain "
+        "FROM customers;",
+        "Vzor [^@]+$ vybere závěrečnou část bez zavináče.",
+    ),
+    _task(
+        43, "advanced", "find-bug", ("customers", "loans"),
+        "Poddotaz má hledat schválený úvěr právě vnějšího zákazníka. "
+        "Oprav pravou stranu korelační podmínky.",
+        "SELECT c.name FROM customers c WHERE NOT EXISTS "
+        "(SELECT 1 FROM loans l WHERE l.customer_id = c.customer_id "
+        "AND l.status = 'APPROVED');",
+        "l.customer_id = l.customer_id není korelace na customers c.",
+        sql="SELECT c.name FROM customers c WHERE NOT EXISTS "
+        "(SELECT 1 FROM loans l WHERE l.customer_id = l.customer_id "
+        "AND l.status = 'APPROVED');",
+    ),
+    _task(
+        44, "advanced", "find-bug", ("transactions",),
+        "Předchozí částka nesmí pocházet z jiného účtu. Doplň oddíl okna, "
+        "jinak dotaz neměň.",
+        "SELECT transaction_id, LAG(amount) OVER (PARTITION BY account_id "
+        "ORDER BY transaction_id) AS previous_amount FROM transactions;",
+        "Před ORDER BY přidej PARTITION BY account_id.",
+        sql="SELECT transaction_id, LAG(amount) OVER (ORDER BY transaction_id) "
+        "AS previous_amount FROM transactions;",
+    ),
+    _task(
+        45, "advanced", "find-bug", ("transactions",),
+        "Součet má růst po jednotlivých transakcích, i když mají stejný booked_on. "
+        "Za booked_on doplň transaction_id a explicitní ROWS UNBOUNDED PRECEDING.",
+        "SELECT transaction_id, SUM(amount) OVER (PARTITION BY account_id "
+        "ORDER BY booked_on, transaction_id ROWS UNBOUNDED PRECEDING) "
+        "AS running_amount FROM transactions;",
+        "Výchozí RANGE zahrnuje všechny řádky se stejnou hodnotou řazení najednou.",
+        sql="SELECT transaction_id, SUM(amount) OVER (PARTITION BY account_id "
+        "ORDER BY booked_on) AS running_amount FROM transactions;",
+    ),
+    _task(
+        46, "advanced", "find-bug", ("accounts", "transactions"),
+        "Dotaz má vrátit všechny účty s čistým součtem transakcí, "
+        "pro účty bez transakcí 0. Nahraď SUM(t.amount) výrazem NVL(SUM(t.amount), 0).",
+        "SELECT a.account_id, NVL(SUM(t.amount), 0) AS net_amount FROM accounts a "
+        "LEFT JOIN transactions t ON a.account_id = t.account_id GROUP BY a.account_id;",
+        "SUM nad samými NULL vrací NULL, nikoli 0.",
+        sql="SELECT a.account_id, SUM(t.amount) AS net_amount FROM accounts a "
+        "LEFT JOIN transactions t ON a.account_id = t.account_id GROUP BY a.account_id;",
+    ),
+    _task(
+        47, "advanced", "find-bug", ("customers",),
+        "Dotaz má vybrat e-maily končící přesně doménou example.test. "
+        "Oprav pouze regex: přidej ^ na začátek a escapuj tečku v doméně.",
+        r"SELECT name FROM customers WHERE REGEXP_LIKE(email, '^[^@]+@example\.test$');",
+        r"Tečka v regexu znamená libovolný znak; doslovná tečka se píše \.",
+        sql="SELECT name FROM customers WHERE REGEXP_LIKE(email, '[^@]+@example.test$');",
+    ),
+    _task(
+        48, "advanced", "find-bug", ("accounts",),
+        "V Oracle nelze filtrovat analytický alias v témže WHERE. "
+        "Přesuň výpočet do inline view bez aliasu tabulky a vně vyber account_id "
+        "s balance_rank = 1. Zachovej DENSE_RANK i jeho řazení.",
+        "SELECT account_id FROM (SELECT account_id, DENSE_RANK() OVER "
+        "(ORDER BY balance DESC) AS balance_rank FROM accounts) WHERE balance_rank = 1;",
+        "Vnější SELECT account_id čte z (SELECT account_id, DENSE_RANK() ...).",
+        sql="SELECT account_id, DENSE_RANK() OVER (ORDER BY balance DESC) AS balance_rank "
+        "FROM accounts WHERE balance_rank = 1;",
+    ),
+    _task(
+        49, "advanced", "explain-result", ("customers", "loans"),
+        "Který zákazník nemá schválený úvěr? Vysvětli vliv stavu PENDING.",
+        "Vrátí Eva Mala; její úvěr je PENDING, nikoli schválený.",
+        "NOT EXISTS hledá absenci úvěru se stavem APPROVED, ne absenci všech úvěrů.",
+        sql="SELECT c.name FROM customers c WHERE NOT EXISTS "
+        "(SELECT 1 FROM loans l WHERE l.customer_id = c.customer_id "
+        "AND l.status = 'APPROVED');",
+        keywords=("eva mala", "pending", "schválený"),
+    ),
+    _task(
+        50, "advanced", "explain-result", ("transactions",),
+        "Jakou následující částku vrátí LEAD pro transakce 100 a 101? "
+        "Uveď i chybějící hodnotu.",
+        "Transakce 100 má následující částku -50; transakce 101 má NULL.",
+        "LEAD čte následující řádek uvnitř stejného účtu.",
+        sql="SELECT transaction_id, LEAD(amount) OVER (PARTITION BY account_id "
+        "ORDER BY transaction_id) AS next_amount FROM transactions ORDER BY transaction_id;",
+        keywords=("-50", "null", "následující"),
+    ),
+    _task(
+        51, "advanced", "explain-result", ("accounts",),
+        "Který účet má husté pořadí 2 a proč? Co by se stalo s pořadím při shodách?",
+        "Účet 20 má druhý nejvyšší zůstatek 500. Shody sdílejí pořadí bez mezer.",
+        "DENSE_RANK při shodách nevynechává následující pořadí.",
+        sql="SELECT account_id FROM (SELECT account_id, DENSE_RANK() OVER "
+        "(ORDER BY balance DESC) AS balance_rank FROM accounts) WHERE balance_rank = 2;",
+        keywords=("20", "500", "bez mezer"),
+    ),
+    _task(
+        52, "advanced", "explain-result", ("customers",),
+        "Jaké příjmení vrátí regex pro každého zákazníka? Popiš význam vzoru.",
+        "Vrátí Novak a Mala; regex vybírá poslední slovo jména.",
+        "Vzor [^ ]+$ hledá závěrečný úsek bez mezer.",
+        sql="SELECT customer_id, REGEXP_SUBSTR(name, '[^ ]+$') AS surname FROM customers;",
+        keywords=("novak", "mala", "poslední"),
+    ),
+    _task(
+        53, "advanced", "explain-result", ("branches", "accounts", "transactions"),
+        "Jaké čisté částky vrátí report pro pobočky Central a South? "
+        "Vysvětli zachování pobočky bez transakcí.",
+        "Central má čistou částku 150. South má 0, protože LEFT JOIN ji zachová "
+        "a NVL nahradí NULL nulou.",
+        "Dvě transakce účtu 10 dávají 200 - 50; pobočka 2 nemá žádnou.",
+        sql="SELECT b.name, NVL(SUM(t.amount), 0) AS net_amount FROM branches b "
+        "LEFT JOIN accounts a ON b.branch_id = a.branch_id "
+        "LEFT JOIN transactions t ON a.account_id = t.account_id "
+        "GROUP BY b.branch_id, b.name;",
+        keywords=("150", "south", "0", "left join"),
+    ),
+    _task(
+        54, "advanced", "explain-result", ("transactions",),
+        "Jaký součet vrátí okno pro každý řádek a proč se hodnoty shodují? "
+        "Obě transakce mají stejný den.",
+        "Oba řádky mají součet 150; RANGE zahrne všechny transakce se stejným datem.",
+        "RANGE pracuje s hodnotou řazení, ne s jednotlivými fyzickými řádky.",
+        sql="SELECT transaction_id, SUM(amount) OVER (PARTITION BY account_id "
+        "ORDER BY booked_on RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) "
+        "AS day_total FROM transactions;",
+        keywords=("150", "range", "stejným datem"),
+    ),
 ]
-
-
-def generate_tasks():
-    """Vrátí nezávislou kopii připravené sady úloh."""
-    return deepcopy(TASKS)
 
 
 def get_random_task(difficulty, task_type):
     filtered = [
-        task
-        for task in TASKS
+        task for task in TASKS
         if task["difficulty"] == difficulty and task["type"] == task_type
     ]
 
