@@ -18,8 +18,11 @@ v zarovnané ASCII tabulce; názvy tabulek a sloupců jsou anglické.
 
 Spuštění: `python app.py`, poté `/start`.
 U `write-query` i `find-bug` se zadává celý SQL dotaz. Kontrola používá
-stávající textovou normalizaci, nikoli databázový engine: ignoruje velikost
-písmen, bílé znaky mezi slovy a koncový středník. Jiné ekvivalentní zápisy
+tokenovou normalizaci shodnou s `SQLTrainerGUI.normalize_sql` ve větvi
+`feature/oracle-task-expansion`, nikoli databázový engine: ignoruje velikost
+písmen mimo textové literály, mezery mezi tokeny (včetně interpunkce) a jeden
+koncový středník. Obsah textových literálů včetně velikosti písmen a mezer
+musí odpovídat přesně. Jiné ekvivalentní zápisy
 nemusí přijmout; očekávané aliasy a tvar dotazu upřesňuje zadání a nápověda.
 U `explain-result` se zadává české vysvětlení a kontrolují se klíčová slova.
 Stačí dvě shody; nejde o úplnou kontrolu významu odpovědi. Číselná klíčová
@@ -27,6 +30,9 @@ slova se hledají jako celé hodnoty včetně znaménka a desetinné části,
 nikoli jako podřetězce jiných čísel. Textová klíčová slova mohou odpovídat
 i části slova, aby se zachovalo rozpoznávání českých slovních kmenů.
 Příkazy `/hint` a `/solution` zobrazí nápovědu a vzorovou odpověď.
+Každá načtená úloha se započítá pouze při první neprázdné odpovědi, ať už je
+správná nebo chybná. Další odpovědi skóre nemění; `/next` nebo nový výběr
+přes `/start` načte novou úlohu s novým pokusem.
 
 Testy: `python -m unittest discover -v`. Kontrolují kontrakt a rozložení úloh,
 ASCII tabulky, vyhodnocování odpovědí i výsledky všech dotazů nad ukázkovými

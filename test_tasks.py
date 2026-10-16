@@ -70,7 +70,7 @@ class TaskCatalogTests(unittest.TestCase):
                 self.assertFalse(check_answer("", task))
                 self.assertFalse(check_answer("SELECT incorrect FROM missing_table;", task))
                 if task["type"] != "explain-result":
-                    normalized_variant = " \n " + task["solution"].lower().rstrip(";") + " \n"
+                    normalized_variant = " \n " + task["solution"].rstrip(";") + " \n"
                     self.assertTrue(check_answer(normalized_variant, task))
 
     def test_find_bug_requires_corrected_sql_not_buggy_sql_or_description(self):

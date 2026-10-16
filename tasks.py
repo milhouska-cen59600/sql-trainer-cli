@@ -48,8 +48,9 @@ def _task(task_id, difficulty, task_type, tables, instruction, answer, hint,
         sections.append("Odpověz celým opraveným SQL dotazem, nikoli popisem chyby.")
     if task_type in ("write-query", "find-bug"):
         sections.append(
-            "Kontrola porovnává text SQL bez ohledu na velikost písmen, bílé znaky "
-            "mezi slovy a koncový středník. Dodrž pořadí sloupců a uvedené aliasy; "
+            "Kontrola porovnává tokeny SQL bez ohledu na velikost písmen mimo textové "
+            "literály, mezery mezi tokeny a jeden koncový středník. Obsah textových "
+            "literálů musí odpovídat přesně. Dodrž pořadí sloupců a uvedené aliasy; "
             "nepřidávej další aliasy ani řazení. Nápověda upřesňuje očekávaný zápis."
         )
     return {
