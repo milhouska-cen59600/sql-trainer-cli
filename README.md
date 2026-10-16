@@ -22,6 +22,10 @@ stávající textovou normalizaci, nikoli databázový engine: ignoruje velikost
 písmen, bílé znaky mezi slovy a koncový středník. Jiné ekvivalentní zápisy
 nemusí přijmout; očekávané aliasy a tvar dotazu upřesňuje zadání a nápověda.
 U `explain-result` se zadává české vysvětlení a kontrolují se klíčová slova.
+Stačí dvě shody; nejde o úplnou kontrolu významu odpovědi. Číselná klíčová
+slova se hledají jako celé hodnoty včetně znaménka a desetinné části,
+nikoli jako podřetězce jiných čísel. Textová klíčová slova mohou odpovídat
+i části slova, aby se zachovalo rozpoznávání českých slovních kmenů.
 Příkazy `/hint` a `/solution` zobrazí nápovědu a vzorovou odpověď.
 
 Testy: `python -m unittest discover -v`. Kontrolují kontrakt a rozložení úloh,

@@ -1,3 +1,5 @@
+import re
+
 from tasks import get_random_task
 
 state = {
@@ -25,7 +27,14 @@ def check_find_bug_answer(user_input, expected_answer):
 
 def check_explain_result_answer(user_input, keywords):
     answer = user_input.lower()
-    matches = sum(1 for keyword in keywords if keyword in answer)
+    numbers = set(re.findall(
+        r"(?<![\w.+-])[+-]?\d+(?:[.,]\d+)?(?!\w|[.,]\d)", answer,
+    ))
+    matches = sum(
+        1 for keyword in keywords
+        if (keyword in numbers if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?", keyword)
+            else keyword in answer)
+    )
     return matches >= 2
 
 

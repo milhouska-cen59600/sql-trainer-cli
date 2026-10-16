@@ -4,7 +4,7 @@ import unittest
 from collections import Counter
 from unittest.mock import patch
 
-from app import check_answer
+from app import check_answer, check_explain_result_answer
 from tasks import TASKS, _TABLES, get_random_task
 
 
@@ -79,6 +79,29 @@ class TaskCatalogTests(unittest.TestCase):
                 with self.subTest(task=task["id"]):
                     self.assertFalse(check_answer(task["sql"], task))
                     self.assertFalse(check_answer(task["hint"], task))
+
+    def test_explain_result_rejects_overlapping_numeric_keywords(self):
+        tasks = {task["id"]: task for task in TASKS}
+        for task_id, answer in ((32, "1500"), (53, "150")):
+            with self.subTest(task=task_id, answer=answer):
+                self.assertFalse(check_answer(answer, tasks[task_id]))
+        self.assertTrue(check_answer("Adam Novak má 1500.", tasks[32]))
+        self.assertTrue(check_answer("Central má 150, South má 0.", tasks[53]))
+
+    def test_explain_result_matches_complete_numbers_and_preserves_czech_stems(self):
+        for answer in ("součet 1150", "součet -150", "součet +150",
+                       "součet 150.5", "součet 150,5", "součet x150", "součet 150x"):
+            with self.subTest(answer=answer):
+                self.assertFalse(check_explain_result_answer(answer, ["součet", "150"]))
+        for answer in ("Součet: 150.", "součet (150)", "součet 150, další údaj"):
+            with self.subTest(answer=answer):
+                self.assertTrue(check_explain_result_answer(answer, ["součet", "150"]))
+        self.assertTrue(check_explain_result_answer(
+            "Průměrný zůstatek je 1000.", ["průměr", "1000"],
+        ))
+        self.assertTrue(check_explain_result_answer(
+            "Následující částka je -50.", ["následující", "-50"],
+        ))
 
     def test_random_selection_supports_all_combinations_and_unknown_filters(self):
         for difficulty in ("beginner", "intermediate", "advanced"):
