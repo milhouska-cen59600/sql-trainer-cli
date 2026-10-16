@@ -102,6 +102,7 @@ class SQLTrainerGUI:
         ttk.Button(button_frame, text="Solution", command=self.show_solution).pack(side="left", padx=5)
         self.next_button = ttk.Button(button_frame, text="Next", command=self.next_task)
         self.next_button.pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Reset score", command=self.reset_score).pack(side="left", padx=5)
 
         ttk.Label(content_frame, text="Feedback:", font=("Segoe UI", 11, "bold")).grid(row=7, column=0, sticky="w")
         self.feedback_text = scrolledtext.ScrolledText(
@@ -158,6 +159,12 @@ class SQLTrainerGUI:
 
     def update_score_label(self):
         self.score_label.config(text=f"Score: {self.score_correct}/{self.score_total}")
+
+    def reset_score(self):
+        self.score_correct = 0
+        self.score_total = 0
+        self.update_score_label()
+        self.set_feedback("Score has been reset.")
 
     def normalize_sql(self, text):
         return text.strip().rstrip(";").lower().split()
