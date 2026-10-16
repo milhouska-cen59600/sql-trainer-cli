@@ -1,3 +1,5 @@
+import re
+
 from tasks import get_random_task
 
 state = {
@@ -5,6 +7,7 @@ state = {
     "difficulty": None,
     "type": None,
     "current_task": None,
+    "answered_current_task": False,
     "step": "idle",
     "score_correct": 0,
     "score_total": 0,
@@ -12,21 +15,38 @@ state = {
 
 
 def normalize_sql(text):
-    return text.strip().rstrip(";").lower().split()
+    tokens = re.findall(
+        r"'(?:''|[^'])*'|[A-Za-z_][A-Za-z_0-9]*"
+        r"|\d+(?:\.\d+)?|>=|<=|<>|!=|[^\s]",
+        text.strip(),
+    )
+    if tokens and tokens[-1] == ";":
+        tokens.pop()
+
+    return [
+        token if token.startswith("'") else token.lower()
+        for token in tokens
+    ]
 
 
 def check_write_query_answer(user_input, expected_answer):
     return normalize_sql(user_input) == normalize_sql(expected_answer)
 
 
-def check_find_bug_answer(user_input, keywords):
-    answer = user_input.lower()
-    return any(keyword in answer for keyword in keywords)
+def check_find_bug_answer(user_input, expected_answer):
+    return check_write_query_answer(user_input, expected_answer)
 
 
 def check_explain_result_answer(user_input, keywords):
     answer = user_input.lower()
-    matches = sum(1 for keyword in keywords if keyword in answer)
+    numbers = set(re.findall(
+        r"(?<![\w.+-])[+-]?\d+(?:[.,]\d+)?(?!\w|[.,]\d)", answer,
+    ))
+    matches = sum(
+        1 for keyword in keywords
+        if (keyword in numbers if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?", keyword)
+            else keyword in answer)
+    )
     return matches >= 2
 
 
@@ -35,7 +55,7 @@ def check_answer(user_input, task):
         return check_write_query_answer(user_input, task["expected_answer"])
 
     if task["type"] == "find-bug":
-        return check_find_bug_answer(user_input, task["keywords"])
+        return check_find_bug_answer(user_input, task["expected_answer"])
 
     if task["type"] == "explain-result":
         return check_explain_result_answer(user_input, task["keywords"])
@@ -76,6 +96,8 @@ def ask_type():
 
 def show_task():
     task = get_random_task(state["difficulty"], state["type"])
+    state["current_task"] = task
+    state["answered_current_task"] = False
 
     if not task:
         print("assistant> No task found for this difficulty and type.")
@@ -83,7 +105,6 @@ def show_task():
         state["step"] = "idle"
         return
 
-    state["current_task"] = task
     state["step"] = "task"
 
     print("assistant> Task:")
@@ -103,6 +124,15 @@ def handle_task_answer(user_input):
         print("assistant> No active task. Type /start first.")
         return True
 
+    if state["answered_current_task"]:
+        print("assistant> This task has already been answered. Type /next for another task.")
+        return True
+
+    if not user_input.strip():
+        print("assistant> Please enter an answer first.")
+        return True
+
+    state["answered_current_task"] = True
     state["score_total"] += 1
 
     is_correct = check_answer(user_input, task)
@@ -131,6 +161,7 @@ def handle_command(user_input):
     if user_input == "/start":
         state["started"] = True
         state["current_task"] = None
+        state["answered_current_task"] = False
         ask_difficulty()
         return True
 
