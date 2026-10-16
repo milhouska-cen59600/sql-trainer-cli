@@ -86,6 +86,17 @@ class SQLTrainerGUITests(unittest.TestCase):
         self.answer("incorrect answer")
         self.assertEqual((self.app.score_correct, self.app.score_total), (1, 2))
 
+    def test_reset_score_clears_score_and_updates_feedback(self):
+        self.app.score_correct = 2
+        self.app.score_total = 3
+        self.app.update_score_label()
+
+        self.app.reset_score()
+
+        self.assertEqual((self.app.score_correct, self.app.score_total), (0, 0))
+        self.assertEqual(self.app.score_label.cget("text"), "Score: 0/0")
+        self.assertEqual(self.app.feedback_text.get("1.0", "end-1c"), "Score has been reset.")
+
     def test_solution_and_empty_answer_do_not_award_score(self):
         self.select_task()
         self.app.check_answer()
