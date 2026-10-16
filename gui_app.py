@@ -107,7 +107,7 @@ class Editor(ctk.CTkTextbox):
             text_color="#E3EBF7" if sql else TEXT,
             scrollbar_button_color="#415574" if sql else "#CBD5E1",
             scrollbar_button_hover_color="#5B7394",
-            wrap="word",
+            wrap="none" if sql else "word",
             width=1,
             height=1,
             undo=True,
@@ -156,12 +156,108 @@ class Editor(ctk.CTkTextbox):
             )
 
 
+class TaskEditor(Editor):
+    SECTION_PATTERN = re.compile(
+        r"^(?:Tabulka:.*|Vazba:|Vazby:)$",
+        re.MULTILINE,
+    )
+
+    def __init__(self, master, accent_color, **kwargs):
+        super().__init__(master, sql=False, **kwargs)
+        self.configure(wrap="none")
+
+        self.tag_config(
+            "task_heading",
+            foreground=accent_color,
+            spacing1=4,
+            spacing3=4,
+        )
+        self.tag_config(
+            "task_instruction",
+            foreground="#1E40AF",
+            background="#EAF2FF",
+            spacing1=3,
+            spacing3=3,
+        )
+        self.tag_config(
+            "schema_heading",
+            foreground="#1D4ED8",
+            spacing1=6,
+            spacing3=3,
+        )
+
+    def apply_prompt_highlighting(self):
+        for tag in (
+            "task_heading",
+            "task_instruction",
+            "schema_heading",
+        ):
+            self.tag_remove(tag, "1.0", "end")
+
+        text = self.get("1.0", "end-1c")
+        if not text.strip():
+            return
+
+        task_match = re.search(
+            r"^Úkol:[ \t]*$",
+            text,
+            re.MULTILINE,
+        )
+
+        if task_match:
+            self.tag_add(
+                "task_heading",
+                f"1.0+{task_match.start()}c",
+                f"1.0+{task_match.end()}c",
+            )
+
+            instruction_start = task_match.end()
+            if text[instruction_start:instruction_start + 1] == "\n":
+                instruction_start += 1
+
+            remaining = text[instruction_start:]
+            boundary = re.search(
+                r"\n[ \t]*\n|(?m:^Tabulka:)",
+                remaining,
+            )
+            instruction_end = (
+                instruction_start + boundary.start()
+                if boundary
+                else len(text)
+            )
+
+            if instruction_end > instruction_start:
+                self.tag_add(
+                    "task_instruction",
+                    f"1.0+{instruction_start}c",
+                    f"1.0+{instruction_end}c",
+                )
+        else:
+            for match in re.finditer(
+                r"^Vysvětli[^\n]*",
+                text,
+                re.MULTILINE,
+            ):
+                self.tag_add(
+                    "task_instruction",
+                    f"1.0+{match.start()}c",
+                    f"1.0+{match.end()}c",
+                )
+
+        for match in self.SECTION_PATTERN.finditer(text):
+            self.tag_add(
+                "schema_heading",
+                f"1.0+{match.start()}c",
+                f"1.0+{match.end()}c",
+            )
+
+
 class SQLTrainerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("SQL trenažér – Oracle bankovní úlohy")
         self.root.geometry("1180x920")
-        self.root.minsize(760, 620)
+        self.root.minsize(660, 560)
         self.root.configure(bg=PAGE)
 
         ctk.set_appearance_mode("light")
@@ -229,11 +325,6 @@ class SQLTrainerGUI:
             pady=12,
         )
         self.main_frame.columnconfigure(0, weight=1)
-
-        self.main_frame.rowconfigure(3, weight=4, minsize=180)
-        self.main_frame.rowconfigure(5, weight=2, minsize=90)
-        self.main_frame.rowconfigure(7, weight=4, minsize=180)
-        self.main_frame.rowconfigure(10, weight=2, minsize=90)
 
         header = ctk.CTkFrame(
             self.main_frame,
@@ -388,8 +479,7 @@ class SQLTrainerGUI:
         self.task_hint_label = ctk.CTkLabel(
             self.task_header,
             text=(
-                "Tip: horní blok je určen pro zadání, tabulky, sloupce, "
-                "vazby a ukázkové řádky."
+                "Tip: horní blok je určen pro zadání, tabulky, vazby a ukázková data."
             ),
             font=(self.ui_font, 11),
             text_color="#64748B",
@@ -397,9 +487,10 @@ class SQLTrainerGUI:
         )
         self.task_hint_label.grid(row=0, column=1, sticky="e")
 
-        self.task_text = Editor(
+        self.task_text = TaskEditor(
             self.main_frame,
-            font=(self.ui_font, 14),
+            accent_color=BLUE,
+            font=(self.sql_font, 14),
         )
         self.task_text.grid(row=3, column=0, sticky="nsew")
 
@@ -562,23 +653,19 @@ class SQLTrainerGUI:
         self.update_task_types()
 
     def configure_responsive_layout(self):
-        # Allocate extra space by weight, not large fixed minimums.
         self.main_frame.rowconfigure(3, weight=6, minsize=50)
-        self.main_frame.rowconfigure(5, weight=2, minsize=40)
+        self.main_frame.rowconfigure(5, weight=2, minsize=60)
         self.main_frame.rowconfigure(7, weight=3, minsize=60)
         self.main_frame.rowconfigure(10, weight=1, minsize=40)
 
         self.root.minsize(660, 560)
         self.main_frame.pack_configure(padx=10, pady=8)
 
-        # Reduce vertical overhead around the resizable panels.
         for widget in self.main_frame.grid_slaves():
             widget.grid_configure(pady=2)
 
-        # The explanatory hint repeats information from the task.
         self.task_hint_label.grid_remove()
 
-        # Keep the title, but remove the extra subtitle row.
         header = self.main_frame.grid_slaves(row=0, column=0)[0]
         for widget in header.grid_slaves(row=1):
             widget.grid_remove()
@@ -655,9 +742,18 @@ class SQLTrainerGUI:
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.insert("1.0", text)
-        widget.highlight_sql()
+
+        if isinstance(widget, TaskEditor):
+            widget.apply_prompt_highlighting()
+        else:
+            widget.highlight_sql()
+
         widget.configure(state="disabled")
         widget.yview_moveto(0)
+        try:
+            widget.xview_moveto(0)
+        except Exception:
+            pass
 
     def set_task_text(self, text):
         self.set_readonly_text(self.task_text, text)
@@ -673,7 +769,7 @@ class SQLTrainerGUI:
             self.sql_heading.grid()
             self.sql_label.grid()
             self.main_frame.rowconfigure(
-                5, weight=2, minsize=40
+                5, weight=2, minsize=60
             )
         else:
             self.sql_heading.grid_remove()
@@ -704,12 +800,13 @@ class SQLTrainerGUI:
     def show_welcome(self):
         self.set_task_text(
             "Vítej v Oracle SQL trenažéru.\n\n"
+            "Úkol:\n"
             "Vyber úroveň a typ úlohy a klikni na Spustit.\n\n"
-            "Horní blok je připravený pro strukturované zadání:\n"
-            "- zadání úkolu\n"
-            "- tabulky a sloupce\n"
-            "- vztahy mezi tabulkami\n"
-            "- ukázkové řádky"
+            "Tabulka: sample_table\n"
+            "column_a | column_b\n"
+            "---------+----------\n"
+            "value_1  | value_2\n"
+            "value_3  | value_4"
         )
         self.set_sql_text("")
         self.show_sql(False)
@@ -856,6 +953,20 @@ class SQLTrainerGUI:
         sql = task.get("sql") or ""
         self.set_sql_text(sql)
         self.show_sql(bool(sql))
+
+        if sql:
+            if task_type == "explain-result":
+                self.main_frame.rowconfigure(
+                    5, weight=3, minsize=120
+                )
+            elif task_type == "find-bug":
+                self.main_frame.rowconfigure(
+                    5, weight=2, minsize=70
+                )
+            else:
+                self.main_frame.rowconfigure(
+                    5, weight=2, minsize=60
+                )
 
         if sql:
             self.sql_heading.configure(
