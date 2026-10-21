@@ -1,0 +1,42 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #182538;
+  background: #eef3f8;
+  line-height: 1.5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1100px; margin: auto; padding: 1.5rem; }
+header, section, form {
+  background: white;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+h1, h2, h3 { margin: 0 0 0.6rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
+label { display: block; font-weight: 600; }
+.controls, .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
+select, button, textarea { font: inherit; padding: 0.6rem; border-radius: 0.3rem; }
+select, textarea { border: 1px solid #718096; max-width: 100%; }
+select { display: block; }
+button { background: #174f99; color: white; border: none; cursor: pointer; }
+button:hover:not(:disabled) { background: #103b74; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+:focus-visible { outline: 3px solid #b45d00; outline-offset: 3px; }
+textarea { width: 100%; resize: vertical; margin-top: 0.5rem; }
+pre, textarea { font-family: ui-monospace, monospace; font-size: 0.95rem; }
+pre { overflow-x: auto; padding: 0.75rem; background: #f3f6fa; }
+#hint, #solution { white-space: pre-wrap; overflow-wrap: anywhere; }
+#score { font-weight: bold; }
+#feedback { font-weight: 600; }
+#storage-warning { color: #7c3d00; }
+footer, #rules { font-size: 0.9rem; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  main { padding: 0.6rem; }
+  .controls > label { width: 100%; }
+  select { width: 100%; }
+}
