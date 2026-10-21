@@ -74,7 +74,7 @@ select {
   transition: background-color .15s ease, border-color .15s ease;
 }
 select option { color: #e4f0fa; background: #13283d; }
-select:hover:not(:disabled) { border-color: #45aaa0; background: #183049; }
+select:hover:not(:disabled):not(:focus) { border-color: #45aaa0; background: #183049; }
 select:focus { border-color: #45aaa0; }
 select:disabled { color: #9fb3c6; background: #1d3043; border-color: #2c4560; cursor: not-allowed; }
 button {
@@ -143,7 +143,7 @@ textarea {
   transition: border-color .15s ease;
 }
 textarea::placeholder { color: #9fb3c6; opacity: 1; }
-textarea:hover:not(:disabled):not([readonly]) { border-color: #3a6185; }
+textarea:hover:not(:disabled):not([readonly]):not(:focus) { border-color: #3a6185; }
 textarea:focus { border-color: #45aaa0; }
 textarea:disabled { color: #a9bccd; background: #1d3043; border-color: #2c4560; cursor: not-allowed; }
 textarea[readonly] { color: #c9d9e7; background: #1a2f44; }
