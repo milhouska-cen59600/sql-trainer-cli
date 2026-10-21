@@ -9,62 +9,77 @@
 </head>
 <body>
   <main>
-    <header>
-      <h1>SQL trenažér</h1>
-      <p>Oracle SQL v bankovní doméně — bez instalace databáze.</p>
-      <p id="score" role="status">Skóre: 0/0</p>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">ORACLE SQL · BANKOVNÍ DOMÉNA</p>
+        <h1>SQL trenažér</h1>
+        <p>Procvičuj dotazy vlastním tempem. Vyber si úlohu a začni, až budeš připravený.</p>
+      </div>
+      <p id="score" class="score" role="status">Skóre: 0/0</p>
       <p id="storage-warning" role="status" hidden></p>
     </header>
-    <section class="controls" aria-label="Výběr úlohy">
-      <label>Obtížnost
-        <select id="difficulty">
-          <option value="beginner">Junior</option>
-          <option value="intermediate">Medior</option>
-          <option value="advanced">Senior</option>
-        </select>
-      </label>
-      <label>Typ úlohy
-        <select id="task-type">
-          <option value="write-query">Napiš dotaz (write-query)</option>
-          <option value="find-bug">Oprav chybu (find-bug)</option>
-          <option value="explain-result">Vysvětli výsledek (explain-result)</option>
-        </select>
-      </label>
-      <button id="load" disabled>Načíst úlohu</button>
+    <section class="selection card" aria-label="Výběr úlohy">
+      <div class="section-intro">
+        <p class="eyebrow">PŘIPRAVEN K PROCVIČOVÁNÍ?</p>
+        <h2>Vyber si svou úlohu</h2>
+      </div>
+      <div class="controls">
+        <label>Obtížnost
+          <select id="difficulty">
+            <option value="beginner">Junior</option>
+            <option value="intermediate">Medior</option>
+            <option value="advanced">Senior</option>
+          </select>
+        </label>
+        <label>Typ úlohy
+          <select id="task-type">
+            <option value="write-query">Napiš dotaz</option>
+            <option value="find-bug">Oprav chybu</option>
+            <option value="explain-result">Vysvětli výsledek</option>
+          </select>
+        </label>
+        <button id="load" class="button-primary" disabled>Spustit</button>
+        <p id="selection-note" class="selection-note">Úloha se načte až po kliknutí na Spustit.</p>
+      </div>
     </section>
-    <section aria-labelledby="task-heading">
-      <h2 id="task-heading">Zadání</h2>
-      <pre id="prompt">Načítání katalogu…</pre>
+    <section class="card task-card" aria-labelledby="task-heading">
+      <div class="task-title">
+        <p class="eyebrow">TVŮJ TRÉNINK</p>
+        <h2 id="task-heading">Zadání</h2>
+      </div>
+      <pre id="prompt" class="prompt">Načítám katalog úloh…</pre>
       <div id="sql-section" hidden>
         <h3>SQL dotaz</h3>
-        <pre id="sql"></pre>
+        <pre id="sql" class="code-block"></pre>
       </div>
     </section>
-    <form id="answer-form">
-      <label for="answer">Tvoje odpověď</label>
-      <textarea id="answer" rows="7" spellcheck="false" disabled
-        aria-describedby="rules"></textarea>
-      <p id="rules">Počítá se pouze první neprázdná odpověď na načtenou úlohu.
-        Nápověda body neovlivní; po zobrazení řešení už bod nezískáš.</p>
+    <form id="answer-form" class="card answer-card">
+      <div class="answer-heading">
+        <label for="answer">Tvoje odpověď</label>
+        <button id="format-button" class="button-secondary format-button" type="button" hidden disabled>
+          Formátovat SQL
+        </button>
+      </div>
+      <textarea id="answer" rows="8" spellcheck="false" disabled aria-describedby="rules"></textarea>
+      <p id="rules">Počítá se pouze první neprázdná odpověď na úlohu. Nápověda body neovlivní; po zobrazení řešení už bod nezískáš.</p>
       <div class="actions">
-        <button id="check" type="submit" disabled>Zkontrolovat</button>
-        <button id="hint-button" type="button" disabled>Nápověda</button>
-        <button id="solution-button" type="button" disabled>Řešení</button>
-        <button id="next" type="button" disabled>Další úloha</button>
-        <button id="reset" type="button">Vynulovat skóre</button>
+        <button id="check" class="button-primary" type="submit" disabled>Zkontrolovat odpověď</button>
+        <button id="hint-button" class="button-secondary" type="button" disabled>Nápověda</button>
+        <button id="solution-button" class="button-secondary" type="button" disabled>Ukázat řešení</button>
+        <button id="next" class="button-secondary" type="button" disabled>Další úloha</button>
+        <button id="reset" class="button-quiet" type="button">Vynulovat skóre</button>
       </div>
     </form>
-    <p id="feedback" role="status" aria-live="polite"></p>
-    <section id="hint-section" hidden>
+    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    <section id="hint-section" class="card reveal-card" hidden>
       <h2>Nápověda</h2>
       <pre id="hint"></pre>
     </section>
-    <section id="solution-section" hidden>
+    <section id="solution-section" class="card reveal-card" hidden>
       <h2>Vzorové řešení</h2>
-      <pre id="solution"></pre>
+      <pre id="solution" class="code-block"></pre>
     </section>
-    <footer>Vyhodnocení běží pouze v prohlížeči. SQL se neprovádí a vzorové
-      odpovědi jsou veřejnou součástí katalogu.</footer>
+    <footer>Vyhodnocení běží pouze v prohlížeči. SQL se neprovádí a vzorové odpovědi jsou veřejnou součástí katalogu.</footer>
     <noscript>Pro používání trenažéru povol JavaScript.</noscript>
   </main>
 </body>

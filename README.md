@@ -57,20 +57,22 @@ python -m http.server 8000 --bind 127.0.0.1
 ```
 
 Otevři **http://127.0.0.1:8000/web/**. Neotvírej `index.html` přímo přes
-`file://`: pro načtení JSON katalogu je potřeba HTTP server.
+`file://`: pro načtení JSON katalogu je potřeba HTTP server. Aplikace po načtení
+katalogu zůstane v úvodním stavu; vybranou úlohu načte až po kliknutí na
+**Spustit**. Změna obtížnosti nebo typu úlohu sama nenačte.
 
 ### Publikování na GitHub Pages
 
-Po sloučení změn do `main` otevři **Settings → Pages → Build and deployment**:
+GitHub Pages při publikování z větve podporuje pouze kořen repozitáře nebo
+složku `/docs`, nikoli libovolnou složku jako `/web`. V tomto repozitáři je
+publikační zdroj **`main` + `/docs`**; aplikace je proto dostupná na adrese:
 
-1. Zvol **Deploy from a branch**.
-2. Vyber větev **main**, složku **/(root)** a ulož nastavení.
-3. Po dokončení nasazení otevři
-   **https://milhouska-cen59600.github.io/sql-trainer-cli/web/**.
+**https://milhouska-cen59600.github.io/sql-trainer-cli/**
 
-GitHub Pages při publikování z větve podporuje jen kořen nebo `/docs`,
-nikoli přímý výběr `/web`. Proto publikujeme kořen a aplikaci otevíráme
-na cestě `/web/`. Všechny odkazy na soubory aplikace jsou relativní.
+`web/` je pracovní kopie aplikace a `docs/` její kopie publikovaná službou
+Pages. Udržuj `app.js`, `index.html`, `styles.css` a `tasks.json` v obou
+složkách stejné; změny webu proto zkopíruj také do `docs/`. Strukturu nebo
+nastavení Pages není potřeba měnit.
 
 ### Vyhodnocování a skóre
 
@@ -100,7 +102,8 @@ export obnov z kořene repozitáře:
 python -c "import json; from pathlib import Path; from tasks import TASKS; Path('web/tasks.json').write_text(json.dumps(TASKS, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')"
 ```
 
-`python -m unittest test_web -v` ověří úplnost exportu a chování JavaScriptu
-(kontrolu odpovědí, filtry, skórování, nápovědu/řešení a selhání úložiště/načítání).
-JS testy používají pouze standardní Node.js; bez něj se přeskočí.
+`python -m unittest test_web -v` ověří úplnost exportu, shodu `web/` a `docs/`
+a chování JavaScriptu (ruční spuštění úlohy, filtry, SQL formátování, kontrolu
+odpovědí, skórování, nápovědu/řešení a selhání úložiště/načítání). JS testy
+používají pouze standardní Node.js; bez něj se přeskočí.
 Celou původní i rozšířenou sadu spustí `python -m unittest discover -v`.
