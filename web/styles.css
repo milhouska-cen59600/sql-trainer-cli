@@ -91,27 +91,24 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .task-card { border-top: 4px solid #45aaa0; }
 .task-title { margin-bottom: .8rem; }
 .task-title h2 { margin-bottom: 0; }
-.prompt {
-  max-width: 100%;
-  overflow-x: auto;
-  margin: 0;
-  border: 1px solid #e2eaf2;
-  border-radius: .7rem;
-  background: #f8fbfd;
-  color: #263f58;
-  white-space: pre;
-}
+.prompt { margin: 0; }
 pre, textarea { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .92rem; }
-pre { min-width: 0; max-width: 100%; margin: .55rem 0 0; padding: .95rem; overflow-x: auto; }
-.code-block {
+pre { min-width: 0; max-width: 100%; margin: .55rem 0 0; padding: .95rem; }
+#prompt, #sql, #hint, #solution {
+  min-width: 0;
+  max-width: 100%;
+  padding: .95rem;
   border: 1px solid #223d59;
   border-radius: .7rem;
   background: #13283d;
   color: #e4f0fa;
-  white-space: pre;
-  overflow-wrap: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: hidden;
   tab-size: 2;
 }
+pre code { white-space: inherit; overflow-wrap: inherit; word-break: inherit; }
 .sql-keyword { color: #83d8ce; font-weight: 700; }
 .sql-string { color: #ffd18a; }
 .sql-comment { color: #9aafc0; font-style: italic; }
@@ -144,7 +141,6 @@ textarea:disabled { color: #62778c; background: #f2f6f9; }
 .feedback.error { color: #8c303c; background: #fff0f0; border-color: #f3c6ca; }
 .feedback.pending { color: #405780; background: #efeffb; border-color: #d8d7f3; }
 .reveal-card { border-left: 4px solid #7668c6; }
-#hint { border-radius: .65rem; background: #f5f4fd; color: #334262; white-space: pre-wrap; overflow-wrap: anywhere; }
 footer { padding: .5rem .25rem; color: #526980; font-size: .88rem; }
 :focus-visible { outline: 3px solid #e4a239; outline-offset: 3px; }
 [hidden] { display: none !important; }
