@@ -29,10 +29,12 @@ def _task(task_id, difficulty, task_type, tables, instruction, answer, hint,
           sql=None, keywords=()):
     sections = [
         "Úkol: " + instruction,
-        "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu; booked_on má typ DATE.",
+        "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu.",
     ]
     for name in tables:
         columns, rows = _TABLES[name]
+        if "booked_on" in columns:
+            sections[1] += f" {name}.booked_on má typ DATE."
         cells = [columns] + [tuple(str(value) for value in row) for row in rows]
         widths = [max(len(row[index]) for row in cells) for index in range(len(columns))]
         border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
