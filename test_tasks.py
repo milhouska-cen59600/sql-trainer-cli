@@ -5,7 +5,7 @@ from collections import Counter
 from unittest.mock import patch
 
 from app import check_answer, check_explain_result_answer
-from tasks import TASKS, _TABLES, get_random_task
+from tasks import TASKS, _TABLES, _task, get_random_task
 
 
 class TaskCatalogTests(unittest.TestCase):
@@ -62,6 +62,46 @@ class TaskCatalogTests(unittest.TestCase):
                         rows[1:],
                         [tuple(str(value) for value in row) for row in _TABLES[table][1]],
                     )
+
+    def test_datatype_notes_match_displayed_schemas_for_all_tasks(self):
+        for task in TASKS:
+            with self.subTest(task=task["id"]):
+                shown = re.findall(r"Tabulka: (\w+)", task["prompt"])
+                expected = [
+                    f"{table}.booked_on má typ DATE."
+                    for table in shown if "booked_on" in _TABLES[table][0]
+                ]
+                boilerplate = task["prompt"].split("\n\n")[1]
+                self.assertEqual(
+                    boilerplate,
+                    "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu."
+                    + "".join(f" {note}" for note in expected),
+                )
+
+    def test_datatype_note_regressions(self):
+        tasks = {task["id"]: task for task in TASKS}
+        for task_id, tables, has_note in (
+            (52, ["customers"], False),
+            (25, ["transactions"], True),
+            (21, ["accounts", "transactions"], True),
+            (20, ["customers", "accounts"], False),
+        ):
+            with self.subTest(task=task_id):
+                prompt = tasks[task_id]["prompt"]
+                self.assertEqual(re.findall(r"Tabulka: (\w+)", prompt), tables)
+                self.assertEqual("transactions.booked_on má typ DATE." in prompt, has_note)
+                if not has_note:
+                    self.assertNotIn("booked_on", prompt)
+
+    def test_datatype_note_uses_exact_schema_columns_not_instruction(self):
+        for column, has_note in (("booked_on", True), ("not_booked_on", False)):
+            with self.subTest(column=column):
+                with patch.dict(_TABLES, {"example": ((column,), (("NULL",),))}):
+                    task = _task(
+                        999, "beginner", "write-query", ("example",),
+                        "Text zmiňuje booked_on.", "SELECT * FROM example;", "Nápověda.",
+                    )
+                self.assertEqual("example.booked_on má typ DATE." in task["prompt"], has_note)
 
     def test_canonical_answers_are_accepted(self):
         for task in TASKS:
