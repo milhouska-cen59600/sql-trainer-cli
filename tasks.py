@@ -1,4 +1,5 @@
 import random
+import re
 
 
 _TABLES = {
@@ -29,8 +30,16 @@ def _task(task_id, difficulty, task_type, tables, instruction, answer, hint,
           sql=None, keywords=()):
     sections = [
         "Úkol: " + instruction,
-        "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu.",
+        "Použij syntaxi Oracle SQL.",
     ]
+    if any(
+        str(value).upper() == "NULL"
+        for name in tables for row in _TABLES[name][1] for value in row
+    ) or any(
+        re.search(r"\b(?:NULL|NVL|COALESCE)\b", text, re.IGNORECASE)
+        for text in (instruction, sql, answer, hint) if text
+    ):
+        sections[1] += " NULL značí chybějící hodnotu."
     for name in tables:
         columns, rows = _TABLES[name]
         if "booked_on" in columns:
