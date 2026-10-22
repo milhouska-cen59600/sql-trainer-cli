@@ -73,10 +73,60 @@ class TaskCatalogTests(unittest.TestCase):
                 ]
                 boilerplate = task["prompt"].split("\n\n")[1]
                 self.assertEqual(
-                    boilerplate,
-                    "Použij syntaxi Oracle SQL. NULL značí chybějící hodnotu."
+                    boilerplate.replace(" NULL značí chybějící hodnotu.", ""),
+                    "Použij syntaxi Oracle SQL."
                     + "".join(f" {note}" for note in expected),
                 )
+
+    def test_null_note_catalog_regressions(self):
+        tasks = {task["id"]: task for task in TASKS}
+        for task_id, has_note in (
+            (2, False), (5, False), (14, False),
+            (4, True), (9, True), (18, True), (46, True),
+        ):
+            with self.subTest(task=task_id):
+                self.assertEqual(
+                    "NULL značí chybějící hodnotu." in tasks[task_id]["prompt"], has_note,
+                )
+
+    def test_null_note_uses_only_selected_table_samples(self):
+        for tables, has_note in (
+            (("accounts",), False),
+            (("transactions",), False),
+            (("customers",), True),
+            (("accounts", "customers"), True),
+        ):
+            with self.subTest(tables=tables):
+                task = _task(
+                    999, "beginner", "write-query", tables,
+                    "Vypiš řádky.", "SELECT * FROM accounts;", "Použij SELECT.",
+                )
+                self.assertEqual("NULL značí chybějící hodnotu." in task["prompt"], has_note)
+
+    def test_null_note_detects_semantics_in_each_text_field(self):
+        defaults = {
+            "instruction": "Vypiš účty.",
+            "answer": "SELECT * FROM accounts;",
+            "hint": "Použij SELECT.",
+            "sql": None,
+        }
+        for field in defaults:
+            for text, has_note in (
+                ("balance is null", True),
+                ("balance IS NOT NULL", True),
+                ("nvl(balance, 0)", True),
+                ("Coalesce(balance, 0)", True),
+                ("NULL značí chybějící hodnotu.", True),
+                ("nullable_balance, null_count, nvl_value, coalesce_value", False),
+            ):
+                with self.subTest(field=field, text=text):
+                    task = _task(
+                        999, "beginner", "find-bug", ("accounts",),
+                        **{**defaults, field: text},
+                    )
+                    self.assertEqual(
+                        "NULL značí chybějící hodnotu." in task["prompt"], has_note,
+                    )
 
     def test_datatype_note_regressions(self):
         tasks = {task["id"]: task for task in TASKS}
